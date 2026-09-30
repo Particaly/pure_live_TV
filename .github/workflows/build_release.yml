@@ -14,7 +14,7 @@ concurrency:
   # Static on purpose: a called workflow inherits the caller's `github.workflow`,
   # so a group built from it would be shared with build-android-Tv and deadlock the
   # release run against itself.
-  group: release-index-main
+  group: release-index
   cancel-in-progress: false
 
 jobs:
@@ -26,11 +26,14 @@ jobs:
       contents: write
 
     steps:
-    # 1. 检出仓库代码（获取完整 Git 历史，为后续 rebase 做准备）
+    # 1. 检出仓库代码（获取完整 Git 历史，为后续 rebase 做准备）。
+    # 以触发的分支为主：在开发分支上手动触发就更新那个分支的索引；由
+    # build-android-Tv 的 tag 构建调用时是 detached HEAD，推送步骤会回退
+    # 到主开发分支。
     - name: Checkout repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: main
+        ref: ${{ github.ref }}
         fetch-depth: 0
 
     # 2. 设置 Python 环境
@@ -56,10 +59,17 @@ jobs:
           git add assets/releases.json
           git commit -m "chore: update releases.json [skip ci]"
 
-          # 推送前先拉取远程最新修改，防止与其他任务（如发布 Release）冲突
-          git pull --rebase origin main
+          # 以触发的分支为主；tag 触发时处于 detached HEAD，回退到主开发分支
+          BRANCH=$(git branch --show-current)
+          if [ -z "$BRANCH" ]; then
+            BRANCH="feature/tv-api23-compat"
+          fi
 
-          git push origin main
+          # 推送前先取远程最新提交并 rebase，防止与其他任务（如发布 Release）冲突
+          git fetch origin "$BRANCH"
+          git rebase "origin/$BRANCH"
+
+          git push origin "HEAD:$BRANCH"
         else
           echo "数据未发生变化，无需更新。"
         fi
