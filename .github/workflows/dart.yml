@@ -11,6 +11,11 @@ on:
         description: 'Branch or tag to build (leave empty to use the triggering ref)'
         required: false
         default: ''
+      publish_release:
+        description: '是否发布 GitHub Release（关闭则只产出构建产物；未配置签名 secrets 时不会发布）'
+        type: boolean
+        required: false
+        default: true
   push:
     tags:
       - "v*"
@@ -30,6 +35,10 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+    # Whether a Release was (or will be) published: the index-update job only
+    # runs for real releases, not for artifact-only test builds.
+    outputs:
+      published: ${{ steps.signing.outputs.publish }}
 
     steps:
       - name: 签出代码
@@ -54,7 +63,32 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "本次发布标签：$tag"
 
+      # Forks do not inherit the upstream repo's Actions secrets, so a checkout
+      # may have none at all. Gradle then falls back to debug signing (v1+v2,
+      # installable on Android 6 boxes), but a debug-signed APK must never be
+      # published as a Release — those builds stay on the run page only.
+      - name: 检查签名配置
+        id: signing
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE_BASE64 }}
+          EVENT: ${{ github.event_name }}
+          PUBLISH_INPUT: ${{ inputs.publish_release }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::未配置 KEYSTORE_BASE64 / STORE_PASSWORD / KEY_PASSWORD / KEY_ALIAS，本次使用 debug 签名，只产出测试包，不发布 Release"
+          else
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+            if [ "$EVENT" = "workflow_dispatch" ] && [ "$PUBLISH_INPUT" != "true" ]; then
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
       - name: 下载Android keystore
+        if: steps.signing.outputs.mode == 'release'
         id: android_keystore
         uses: timheuer/base64-to-file@v1.2
         with:
@@ -62,6 +96,7 @@ jobs:
           encodedString: ${{ secrets.KEYSTORE_BASE64 }}
 
       - name: 创建key.properties
+        if: steps.signing.outputs.mode == 'release'
         run: |
           echo "storeFile=${{ steps.android_keystore.outputs.filePath }}" > android/key.properties
           echo "storePassword=${{ secrets.STORE_PASSWORD }}" >> android/key.properties
@@ -131,6 +166,7 @@ jobs:
           retention-days: 14
 
       - name: 上传至Release
+        if: steps.signing.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
@@ -153,6 +189,8 @@ jobs:
       # Every download path in one place on the run page: the six APK URLs, the
       # release page, and this run's artifacts.
       - name: 汇总下载路径
+        env:
+          PUBLISH: ${{ steps.signing.outputs.publish }}
         run: |
           tag="${{ steps.meta.outputs.tag }}"
           base="https://github.com/${{ github.repository }}/releases/download/$tag"
@@ -165,7 +203,11 @@ jobs:
               echo "- [$name]($base/$name) · $(du -h "$f" | cut -f1)"
             done
             echo ""
-            echo "- Release 页面：https://github.com/${{ github.repository }}/releases/tag/$tag"
+            if [ "$PUBLISH" = "true" ]; then
+              echo "- Release 页面：https://github.com/${{ github.repository }}/releases/tag/$tag"
+            else
+              echo "- 本次为 debug 签名测试包，未发布 Release，请从下方运行页链接下载"
+            fi
             echo "- 本次运行的构建产物：https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -179,6 +221,8 @@ jobs:
   # drift apart.
   update-release-index:
     needs: build-android
+    # Test builds without a published Release must not touch the index.
+    if: needs.build-android.outputs.published == 'true'
     permissions:
       contents: write
     uses: ./.github/workflows/build_release.yml
