@@ -25,25 +25,25 @@
       },
       {
         "name": "PureLive-TV-armeabi-v7a-impeller",
-        "size": "80.49mb",
+        "size": "80.48mb",
         "downloads": 0,
         "url": "https://github.com/Particaly/pure_live_TV/releases/download/v3.0.7/PureLive-TV-armeabi-v7a-impeller.apk"
       },
       {
         "name": "PureLive-TV-armeabi-v7a-skia",
-        "size": "80.49mb",
+        "size": "80.48mb",
         "downloads": 0,
         "url": "https://github.com/Particaly/pure_live_TV/releases/download/v3.0.7/PureLive-TV-armeabi-v7a-skia.apk"
       },
       {
         "name": "PureLive-TV-x86_64-impeller",
-        "size": "97.43mb",
+        "size": "97.5mb",
         "downloads": 0,
         "url": "https://github.com/Particaly/pure_live_TV/releases/download/v3.0.7/PureLive-TV-x86_64-impeller.apk"
       },
       {
         "name": "PureLive-TV-x86_64-skia",
-        "size": "97.43mb",
+        "size": "97.5mb",
         "downloads": 0,
         "url": "https://github.com/Particaly/pure_live_TV/releases/download/v3.0.7/PureLive-TV-x86_64-skia.apk"
       }
@@ -414,19 +414,19 @@
       {
         "name": "arm64-v8a",
         "size": "51.82mb",
-        "downloads": 9200,
+        "downloads": 9210,
         "url": "https://github.com/liuchuancong/pure_live_TV/releases/download/v2.0.20/app-arm64-v8a-release.apk"
       },
       {
         "name": "arm64-v8a-without-exo",
         "size": "45.47mb",
-        "downloads": 1555,
+        "downloads": 1556,
         "url": "https://github.com/liuchuancong/pure_live_TV/releases/download/v2.0.20/app-arm64-v8a-without-exo.apk"
       },
       {
         "name": "armeabi-v7a",
         "size": "50.6mb",
-        "downloads": 6434,
+        "downloads": 6438,
         "url": "https://github.com/liuchuancong/pure_live_TV/releases/download/v2.0.20/app-armeabi-v7a-release.apk"
       },
       {
@@ -620,7 +620,7 @@
       {
         "name": "armeabi-v7a",
         "size": "33.78mb",
-        "downloads": 207,
+        "downloads": 209,
         "url": "https://github.com/liuchuancong/pure_live_TV/releases/download/v2.0.15/app-armeabi-v7a-release.apk"
       },
       {
