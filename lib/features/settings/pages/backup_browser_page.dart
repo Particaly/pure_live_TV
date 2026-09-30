@@ -1,5 +1,5 @@
-import 'package:pure_live/app/router/web_router.dart';
 import 'package:pure_live/exports/package_export.dart';
+import 'package:pure_live/app/router/web/web_router.dart';
 
 /// Phone page for downloading and importing a backup.
 ///
@@ -21,9 +21,9 @@ class BackupBrowserSectionPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Center(child: RemoteSyncQrCard(width: 320, route: WebRemoteRouter.sync)),
-          SizedBox(height: 20.sp),
+          SizedBox(height: 20.ts(context)),
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8.sp),
+            padding: EdgeInsets.symmetric(horizontal: 8.ts(context)),
             child: Center(
               child: Text(
                 i18n('backup_browser_hint'),

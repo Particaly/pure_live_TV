@@ -1,9 +1,9 @@
 import 'package:pure_live/services/index.dart';
-import 'package:pure_live/platforms/douyu/douyu_utils.dart';
 import 'package:pure_live/platforms/sites.dart';
-import 'package:pure_live/app/router/app_routes.dart';
-import 'package:pure_live/app/router/app_router.dart';
 import 'package:pure_live/exports/package_export.dart';
+import 'package:pure_live/app/router/app/app_routes.dart';
+import 'package:pure_live/app/router/app/app_router.dart';
+import 'package:pure_live/platforms/douyu/douyu_utils.dart';
 
 /// third-party auth — one row per platform, each opening that platform's own page.
 ///
@@ -197,19 +197,25 @@ class SiteLogo extends StatelessWidget {
   const SiteLogo({super.key, required this.siteId, this.size = 34});
 
   final String siteId;
+
+  /// Design pixels, before the font-scale factor.
   final double size;
 
   @override
   Widget build(BuildContext context) {
+    // The row's labels grow with the app font setting; the logo grows with
+    // them so the leading slot keeps its rhythm (same language as
+    // [TvPlatformLogo]).
+    final double scaled = size.ts(context);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(8.sp),
+      borderRadius: BorderRadius.circular(8.ts(context)),
       child: Image.asset(
         Sites.logoOf(siteId),
-        width: size.sp,
-        height: size.sp,
+        width: scaled,
+        height: scaled,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) =>
-            Icon(Icons.cookie_outlined, size: size.sp, color: context.tvTheme.secondaryTextColor),
+            Icon(Icons.cookie_outlined, size: scaled, color: context.tvTheme.secondaryTextColor),
       ),
     );
   }

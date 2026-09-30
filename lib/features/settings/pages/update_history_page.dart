@@ -1,6 +1,6 @@
-import 'package:pure_live/features/settings/widgets/download_apk_dialog.dart';
 import 'package:pure_live/exports/package_export.dart';
 import 'package:pure_live/services/app_update/app_update_service.dart';
+import 'package:pure_live/features/settings/widgets/download_apk_dialog.dart';
 
 /// version history — the release list the update page links to, plus local update log.
 ///
@@ -42,25 +42,25 @@ class _UpdateHistoryPageState extends ConsumerState<UpdateHistoryPage> {
         TvButton(
           title: i18n('refresh'),
           size: TvButtonSize.mini,
-          icon: Icon(Remix.refresh_line, size: 22.sp),
+          icon: Icon(Remix.refresh_line, size: 22.ts(context)),
           onTap: state.historyLoading ? null : controller.loadHistory,
         ),
       ],
       child: SingleChildScrollView(
-        padding: EdgeInsets.symmetric(horizontal: 24.sp, vertical: 12.sp),
+        padding: EdgeInsets.symmetric(horizontal: 24.ts(context), vertical: 12.ts(context)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             _buildRecordsHeader(state, controller),
             TvSettingsCard(children: <Widget>[_buildRecords(state)]),
-            SizedBox(height: 24.sp),
+            SizedBox(height: 24.ts(context)),
             TvSettingsGroupTitle(
               title: state.currentVersion.isEmpty
                   ? i18n('version_history')
                   : '${i18n('version_history')} · ${i18n('current_version')}v${state.currentVersion}',
             ),
             TvSettingsCard(children: <Widget>[_buildReleases(state, controller)]),
-            SizedBox(height: 40.sp),
+            SizedBox(height: 40.ts(context)),
           ],
         ),
       ),
@@ -160,10 +160,7 @@ class _UpdateHistoryPageState extends ConsumerState<UpdateHistoryPage> {
       padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 16.h),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Text(
-          label,
-          style: AppTextStyles.t17.copyWith(color: tvTheme.secondaryTextColor),
-        ),
+        child: Text(label, style: AppTextStyles.t17.copyWith(color: tvTheme.secondaryTextColor)),
       ),
     );
   }
@@ -210,10 +207,7 @@ String releaseSubtitle(ReleaseModel release) {
 /// Shared with online update's preview rows. Downloading any release listed here is also the
 /// rollback path: the asset button opens the download dialog on that url, which the controller
 /// takes through the same mirrors and the same installer as the newest release.
-Future<void> showReleaseNotesDialog({
-  required BuildContext context,
-  required ReleaseModel release,
-}) async {
+Future<void> showReleaseNotesDialog({required BuildContext context, required ReleaseModel release}) async {
   await TvDialogUtils.show<void>(
     context: context,
     builder: (dialogContext) {
@@ -227,7 +221,7 @@ Future<void> showReleaseNotesDialog({
           children: <Widget>[
             SizedBox(
               width: double.infinity,
-              height: 380.sp,
+              height: 380.ts(context),
               child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -249,21 +243,21 @@ Future<void> showReleaseNotesDialog({
               ),
             ),
             if (release.files.isNotEmpty) ...<Widget>[
-              SizedBox(height: 16.sp),
+              SizedBox(height: 16.ts(context)),
               Text(
                 i18n('update_assets'),
                 style: AppTextStyles.t17.copyWith(fontWeight: FontWeight.w600, color: tvTheme.secondaryTextColor),
               ),
-              SizedBox(height: 10.sp),
+              SizedBox(height: 10.ts(context)),
               Wrap(
-                spacing: 12.sp,
-                runSpacing: 12.sp,
+                spacing: 12.ts(context),
+                runSpacing: 12.ts(context),
                 children: <Widget>[
                   for (final ReleaseFileModel file in release.files)
                     TvButton(
                       title: '${file.name}${file.size.isEmpty ? '' : ' · ${file.size}'}',
                       size: TvButtonSize.mini,
-                      icon: Icon(Icons.download_rounded, size: 20.sp),
+                      icon: Icon(Icons.download_rounded, size: 20.ts(context)),
                       onTap: file.url.startsWith('http')
                           ? () {
                               Navigator.of(dialogContext).pop();
@@ -274,7 +268,7 @@ Future<void> showReleaseNotesDialog({
                 ],
               ),
             ],
-            SizedBox(height: 20.sp),
+            SizedBox(height: 20.ts(context)),
             Align(
               alignment: Alignment.centerRight,
               child: TvButton(

@@ -3,18 +3,18 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter/widgets.dart';
-import 'package:pure_live/shared/utils/hive_pref_util.dart';
-import 'package:pure_live/shared/utils/toast_util.dart';
-import 'package:pure_live/shared/utils/date_time_utils.dart';
-import 'package:pure_live/shared/utils/platform_utils.dart';
-import 'package:pure_live/shared/i18n/locale_helper.dart';
+import 'package:pure_live/core/utils/hive_pref_util.dart';
+import 'package:pure_live/core/utils/toast_util.dart';
+import 'package:pure_live/core/utils/date_time_utils.dart';
+import 'package:pure_live/core/utils/platform_utils.dart';
+import 'package:pure_live/core/i18n/locale_helper.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:pure_live/app/bootstrap/app_navigator.dart';
 import 'package:pure_live/services/backup/backup_controller.dart';
-import 'package:pure_live/shared/dialog/backup_import_dialog.dart';
+import 'package:pure_live/core/dialog/backup_import_dialog.dart';
 import 'package:pure_live/services/remote_sync/remote_sync_device.dart';
 import 'package:pure_live/services/remote_sync/remote_sync_protocol.dart';
-import 'package:pure_live/shared/platform/local_network_access.dart';
+import 'package:pure_live/core/platform/local_network_access.dart';
 
 part 'remote_sync_service.g.dart';
 
@@ -87,10 +87,26 @@ class RemoteSyncController extends _$RemoteSyncController {
   String _lastReceiveNotice = '';
   bool _lastReceiveOk = true;
 
+  /// One settings transfer at a time, in both directions — the reference's
+  /// `isSyncing` / `isApplying` guards.
+  bool _syncing = false;
+  bool _applying = false;
+
   /// Regenerated every time the server starts, so a code seen once is useless
   /// after the service was stopped.
   String _pairingCode = '';
   bool _includeAccounts = false;
+
+  /// The name other devices see in their LAN list, per platform like the
+  /// reference ('PureLive Android' / 'PureLive Windows' / ...).
+  static String get _deviceName => switch (Platform.operatingSystem) {
+    'android' => 'PureLive Android',
+    'ios' => 'PureLive iPhone',
+    'windows' => 'PureLive Windows',
+    'macos' => 'PureLive macOS',
+    'linux' => 'PureLive Linux',
+    _ => 'PureLive',
+  };
 
   /// Asks the user whether [remoteAddress] may read ('export') or overwrite
   /// ('import') this device's settings. Requests are refused without it.
@@ -115,7 +131,9 @@ class RemoteSyncController extends _$RemoteSyncController {
     const key = 'remote_sync_device_id';
     final existing = HivePrefUtil.getString(key);
     if (existing != null && existing.isNotEmpty) return existing;
-    final id = 'tv-${DateTime.now().microsecondsSinceEpoch}';
+    // Same shape as the reference: platform-prefixed, so devices of different
+    // kinds are tellable apart in logs and pair lists.
+    final id = '${Platform.operatingSystem}-${DateTime.now().microsecondsSinceEpoch}';
     HivePrefUtil.setString(key, id);
     return id;
   }
@@ -315,7 +333,18 @@ class RemoteSyncController extends _$RemoteSyncController {
     _server = server;
     _localPort = port;
     _pairingCode = RemoteSyncProtocol.newPairingCode();
-    server.listen(_handleRequest, onError: (_) {}, onDone: () {});
+    server.listen(
+      _handleRequest,
+      onError: (_) {
+        // The reference marks the server down when its socket dies, so the
+        // page stops advertising a service that can no longer answer.
+        if (!_disposed && _running) {
+          _running = false;
+          _publish();
+        }
+      },
+      onDone: () {},
+    );
 
     _cleanupTimer?.cancel();
     _cleanupTimer = Timer.periodic(const Duration(seconds: 15), (_) => _cleanupDevices());
@@ -356,7 +385,7 @@ class RemoteSyncController extends _$RemoteSyncController {
       'msg': 'ok',
       'data': {
         'id': _deviceId,
-        'name': 'PureLive TV (${Platform.operatingSystem})',
+        'name': _deviceName,
         'platform': Platform.operatingSystem,
         'version': '1.0.0',
         'ip': _localIp,
@@ -374,10 +403,16 @@ class RemoteSyncController extends _$RemoteSyncController {
       await _write(request.response, {'code': 403, 'msg': 'Pairing code required', 'data': false});
       return;
     }
-    // Account cookies and this device's own setup are at stake, so reading them
-    // is confirmed by the operator. A push asks through the module picker in
-    // [_applySettings] instead, which can refuse the request the same way.
-    if (request.method == 'GET' && !await _confirm('export', request)) {
+    // Both directions are confirmed by the operator, exactly like the reference
+    // client: reading hands out account cookies, a push can overwrite this
+    // device's own setup. The module picker in [_applySettings] narrows WHAT a
+    // push lands afterwards, on top of this consent.
+    final action = switch (request.method) {
+      'GET' => 'export',
+      'POST' => 'import',
+      _ => null,
+    };
+    if (action != null && !await _confirm(action, request)) {
       request.response.statusCode = HttpStatus.forbidden;
       await _write(request.response, {'code': 403, 'msg': 'Rejected on the device', 'data': false});
       return;
@@ -397,14 +432,26 @@ class RemoteSyncController extends _$RemoteSyncController {
         }
       case 'POST':
         final body = await _readJson(request);
-        final settings = body is Map && body['settings'] is Map
-            ? Map<String, dynamic>.from(body['settings'] as Map)
-            : null;
+        if (body is! Map || body['type']?.toString() != RemoteSyncProtocol.syncType) {
+          await _write(request.response, {'code': 400, 'msg': 'Invalid sync type', 'data': false});
+          return;
+        }
+        final settings = body['settings'] is Map ? Map<String, dynamic>.from(body['settings'] as Map) : null;
         if (settings == null) {
           await _write(request.response, {'code': 400, 'msg': 'Settings is empty', 'data': false});
           return;
         }
-        final ok = await _applySettings(settings);
+        if (_applying) {
+          await _write(request.response, {'code': 409, 'msg': 'Busy', 'data': false});
+          return;
+        }
+        _applying = true;
+        bool ok;
+        try {
+          ok = await _applySettings(settings);
+        } finally {
+          _applying = false;
+        }
         _announceReceive(ok);
         await _write(request.response, {
           'code': ok ? 200 : 500,
@@ -617,7 +664,7 @@ class RemoteSyncController extends _$RemoteSyncController {
       port: _localPort,
       attributes: {
         'id': _deviceId,
-        'name': 'PureLive TV (${Platform.operatingSystem})',
+        'name': _deviceName,
         'platform': Platform.operatingSystem,
         'version': '1.0.0',
         'ip': _localIp,
@@ -644,6 +691,8 @@ class RemoteSyncController extends _$RemoteSyncController {
       syncToAddress(device.ip, device.port, code: code);
 
   Future<bool> syncToAddress(String ip, int port, {String? code}) async {
+    if (_disposed || _syncing) return false;
+    _syncing = true;
     try {
       final settings = ref
           .read(backupControllerProvider.notifier)
@@ -652,7 +701,10 @@ class RemoteSyncController extends _$RemoteSyncController {
       try {
         final request = await client.postUrl(Uri.parse('http://$ip:$port${RemoteSyncProtocol.apiSettings}'));
         request.headers.contentType = ContentType('application', 'json', charset: 'utf-8');
-        if (code != null && code.isNotEmpty) request.headers.set(RemoteSyncProtocol.pairingHeader, code);
+        // Always carried and normalized, exactly like the reference sender: a
+        // code with a stray space must not turn into a header-less request
+        // that dies as 403 on the far side.
+        request.headers.set(RemoteSyncProtocol.pairingHeader, RemoteSyncProtocol.normalizePairingCode(code));
         request.write(jsonEncode(RemoteSyncProtocol.settingsPacket(settings: settings)));
         final response = await request.close();
         final body = await utf8.decoder.bind(response).join();
@@ -664,26 +716,60 @@ class RemoteSyncController extends _$RemoteSyncController {
       }
     } catch (_) {
       return false;
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  /// The peer's raw settings document — the reference's `getRemoteSettings`.
+  /// Does NOT apply anything; [receiveFromAddress] is the applying wrapper.
+  Future<Map<String, dynamic>?> getRemoteSettings(String ip, int port, {String? code}) async {
+    if (_disposed) return null;
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(Uri.parse('http://$ip:$port${RemoteSyncProtocol.apiSettings}'));
+      request.headers.set(RemoteSyncProtocol.pairingHeader, RemoteSyncProtocol.normalizePairingCode(code));
+      final response = await request.close();
+      final body = await utf8.decoder.bind(response).join();
+      if (response.statusCode != HttpStatus.ok) return null;
+      final result = jsonDecode(body);
+      if (result is! Map || result['code'] != 200 || result['data'] is! Map) return null;
+      return Map<String, dynamic>.from(result['data'] as Map);
+    } catch (_) {
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Whether the peer answers at all — the reference's reachability check
+  /// (GET /status, no settings, no pairing code).
+  Future<bool> checkRemoteDevice(String ip, int port) async {
+    if (_disposed) return false;
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(Uri.parse('http://$ip:$port${RemoteSyncProtocol.apiStatus}'));
+      final response = await request.close();
+      return response.statusCode == HttpStatus.ok;
+    } catch (_) {
+      return false;
+    } finally {
+      client.close(force: true);
     }
   }
 
   Future<bool> receiveFromAddress(String ip, int port, {String? code}) async {
-    final client = HttpClient();
+    if (_disposed || _applying) return false;
+    _applying = true;
     try {
-      final request = await client.getUrl(Uri.parse('http://$ip:$port${RemoteSyncProtocol.apiSettings}'));
-      if (code != null && code.isNotEmpty) request.headers.set(RemoteSyncProtocol.pairingHeader, code);
-      final response = await request.close();
-      final body = await utf8.decoder.bind(response).join();
-
-      if (response.statusCode != HttpStatus.ok) return false;
-      final result = jsonDecode(body);
-      if (result is! Map || result['code'] != 200 || result['data'] is! Map) return false;
-      return await _applySettings(Map<String, dynamic>.from(result['data'] as Map));
+      final settings = await getRemoteSettings(ip, port, code: code);
+      if (settings == null) return false;
+      return await _applySettings(settings);
     } catch (e) {
       debugPrint('[sync] receiveFromAddress $ip:$port failed: $e');
       return false;
     } finally {
-      client.close(force: true);
+      _applying = false;
     }
   }
 

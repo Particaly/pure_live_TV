@@ -9,10 +9,10 @@ import 'package:pure_live/features/settings/pages/app_update_page.dart';
 import 'package:pure_live/features/settings/pages/update_history_page.dart';
 import 'package:pure_live/services/app_update/app_update_service.dart';
 import 'package:pure_live/services/settings/settings.dart';
-import 'package:pure_live/shared/models/release_model/release_model.dart';
-import 'package:pure_live/shared/theme/index.dart';
-import 'package:pure_live/shared/utils/hive_pref_util.dart';
-import 'package:pure_live/shared/widgets/index.dart';
+import 'package:pure_live/core/models/release_model/release_model.dart';
+import 'package:pure_live/core/theme/index.dart';
+import 'package:pure_live/core/utils/hive_pref_util.dart';
+import 'package:pure_live/core/widgets/index.dart';
 
 /// 在线更新 → 版本历史, and the device record on top of it.
 class _FakeUpdateController extends AppUpdateController {
@@ -172,20 +172,20 @@ void main() {
     test('wraps the plain release url in every mirror, the origin last', () {
       final List<String> candidates = downloadCandidates(url);
 
-      expect(candidates.first, '${AppUpdateController.assetMirrors.first}$url');
+      expect(candidates.first, '${appUpdateAssetMirrors.first}$url');
       expect(candidates.last, url);
-      expect(candidates.length, AppUpdateController.assetMirrors.length + 1);
+      expect(candidates.length, appUpdateAssetMirrors.length + 1);
     });
 
     test('keeps a picked mirror first and the fallbacks unstacked', () {
-      final String picked = '${AppUpdateController.assetMirrors[1]}$url';
+      final String picked = '${appUpdateAssetMirrors[1]}$url';
       final List<String> candidates = downloadCandidates(picked, preferGivenUrl: true);
 
       expect(candidates.first, picked, reason: '"source 2" is tried first');
       expect(candidates.toSet().length, candidates.length, reason: 'no candidate is listed twice');
       for (final String candidate in candidates) {
         final bool plain = candidate == url;
-        final bool singleProxy = AppUpdateController.assetMirrors.any((String mirror) => candidate == '$mirror$url');
+        final bool singleProxy = appUpdateAssetMirrors.any((String mirror) => candidate == '$mirror$url');
         expect(plain || singleProxy, isTrue, reason: 'a proxy in front of a proxy cannot serve: $candidate');
       }
       expect(candidates, contains(url), reason: 'the plain origin is the last resort');

@@ -3,12 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_lyric/flutter_lyric.dart';
 import 'package:pure_live/exports/common_export.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pure_live/modules/vod/models/models.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
-import 'package:pure_live/modules/media/models/models.dart';
 import 'package:pure_live/modules/music/services/music_lyric_service.dart';
-import 'package:pure_live/modules/media/controllers/music_player_controller.dart';
-
+import 'package:pure_live/modules/vod/controllers/music_player_controller.dart';
 
 /// The audio-only view: the cover in the middle to begin with, then — once the
 /// track has timed lyrics — the same cover on the left with the lines beside it.
@@ -17,7 +15,7 @@ import 'package:pure_live/modules/media/controllers/music_player_controller.dart
 /// the cover travels out of the centre instead of the page jumping between two
 /// unrelated layouts.
 class MusicNowPlayingView extends ConsumerStatefulWidget {
-  const MusicNowPlayingView({super.key,required this.track, required this.resolving, this.lyricRevision = 0});
+  const MusicNowPlayingView({super.key, required this.track, required this.resolving, this.lyricRevision = 0});
 
   final MusicTrack track;
   final bool resolving;
@@ -80,13 +78,13 @@ class MusicNowPlayingViewState extends ConsumerState<MusicNowPlayingView> {
           cid: widget.track.part.cid,
         )
         .then((lrc) {
-      if (!mounted || _loadedKey != key) return;
-      setState(() {
-        _loading = false;
-        _empty = lrc == null;
-      });
-      if (lrc != null) controller.loadLyric(lrc);
-    });
+          if (!mounted || _loadedKey != key) return;
+          setState(() {
+            _loading = false;
+            _empty = lrc == null;
+          });
+          if (lrc != null) controller.loadLyric(lrc);
+        });
   }
 
   @override
@@ -125,6 +123,12 @@ class MusicNowPlayingViewState extends ConsumerState<MusicNowPlayingView> {
   }
 }
 
+/// disagrees the moment the source skips a number. Same rule as the video
+/// detail page's part tiles — leading digits count only when a separator
+/// follows, so "24K Magic" keeps its digits.
+final RegExp _leadingOrdinal = RegExp(r'^\d{1,4}\s*[.、，,\-–—_:：)·．]\s*');
+String stripTrackOrdinal(String raw) => raw.replaceFirst(_leadingOrdinal, '');
+
 /// The cover in the middle of the screen with the name under it.
 class _PosterLayout extends StatelessWidget {
   const _PosterLayout({super.key, required this.track, required this.resolving, required this.status});
@@ -144,45 +148,51 @@ class _PosterLayout extends StatelessWidget {
             alignment: Alignment.center,
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(28.sp),
+                borderRadius: BorderRadius.circular(28.ts(context)),
                 child: CachedNetworkImage(
                   imageUrl: track.archive.cover,
-                  width: 420.sp,
-                  height: 420.sp,
+                  width: 420.ts(context),
+                  height: 420.ts(context),
                   fit: BoxFit.cover,
                   memCacheWidth: 840,
                   errorWidget: (_, _, _) => Container(
-                    width: 420.sp,
-                    height: 420.sp,
+                    width: 420.ts(context),
+                    height: 420.ts(context),
                     color: tvTheme.focusColor.withValues(alpha: 0.2),
-                    child: Icon(Icons.music_note_rounded, size: 140.sp, color: tvTheme.focusColor),
+                    child: Icon(Icons.music_note_rounded, size: 140.ts(context), color: tvTheme.focusColor),
                   ),
                 ),
               ),
               if (resolving)
                 SizedBox(
-                  width: 76.sp,
-                  height: 76.sp,
-                  child: CircularProgressIndicator(strokeWidth: 5.sp, color: tvTheme.focusColor),
+                  width: 76.ts(context),
+                  height: 76.ts(context),
+                  child: CircularProgressIndicator(strokeWidth: 5.ts(context), color: tvTheme.focusColor),
                 ),
             ],
           ),
-          SizedBox(height: 36.sp),
+          SizedBox(height: 36.ts(context)),
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 120.sp),
+            padding: EdgeInsets.symmetric(horizontal: 120.ts(context)),
             child: Text(
-              track.title,
+              stripTrackOrdinal(track.title),
               style: AppTextStyles.t34.copyWith(fontWeight: FontWeight.w700, color: Colors.white),
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          SizedBox(height: 12.sp),
-          Text(track.archive.upName, style: AppTextStyles.t20.copyWith(fontWeight: FontWeight.w500, color: Colors.white70)),
+          SizedBox(height: 12.ts(context)),
+          Text(
+            track.archive.upName,
+            style: AppTextStyles.t20.copyWith(fontWeight: FontWeight.w500, color: Colors.white70),
+          ),
           if (status.isNotEmpty) ...[
-            SizedBox(height: 14.sp),
-            Text(status, style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: Colors.white38)),
+            SizedBox(height: 14.ts(context)),
+            Text(
+              status,
+              style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: Colors.white38),
+            ),
           ],
         ],
       ),
@@ -211,7 +221,7 @@ class _LyricsLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     final tvTheme = context.tvTheme;
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 64.sp, vertical: 96.sp),
+      padding: EdgeInsets.symmetric(horizontal: 64.ts(context), vertical: 96.ts(context)),
       child: Row(
         children: [
           Expanded(
@@ -220,39 +230,44 @@ class _LyricsLayout extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(24.sp),
+                  borderRadius: BorderRadius.circular(24.ts(context)),
                   child: CachedNetworkImage(
                     imageUrl: track.archive.cover,
-                    width: 300.sp,
-                    height: 300.sp,
+                    width: 300.ts(context),
+                    height: 300.ts(context),
                     fit: BoxFit.cover,
                     memCacheWidth: 600,
                     errorWidget: (_, _, _) => Container(
-                      width: 300.sp,
-                      height: 300.sp,
+                      width: 300.ts(context),
+                      height: 300.ts(context),
                       color: tvTheme.focusColor.withValues(alpha: 0.2),
-                      child: Icon(Icons.music_note_rounded, size: 96.sp, color: tvTheme.focusColor),
+                      child: Icon(Icons.music_note_rounded, size: 96.ts(context), color: tvTheme.focusColor),
                     ),
                   ),
                 ),
-                SizedBox(height: 28.sp),
+                SizedBox(height: 28.ts(context)),
                 Text(
-                  track.title,
+                  stripTrackOrdinal(track.title),
                   style: AppTextStyles.t26.copyWith(fontWeight: FontWeight.w700, color: Colors.white),
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                SizedBox(height: 10.sp),
-                Text(track.archive.upName, style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: Colors.white70)),
+                SizedBox(height: 10.ts(context)),
+                Text(
+                  track.archive.upName,
+                  style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: Colors.white70),
+                ),
               ],
             ),
           ),
-          SizedBox(width: 48.sp),
-          Expanded(flex: 6, child: LyricView(controller: lyric, style: style)),
+          SizedBox(width: 48.ts(context)),
+          Expanded(
+            flex: 6,
+            child: LyricView(controller: lyric, style: style),
+          ),
         ],
       ),
     );
   }
 }
-

@@ -1,16 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dpad/dpad.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
+import 'package:pure_live/exports/exports.dart';
+import 'package:pure_live/modules/vod/models/models.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:pure_live/modules/vod/api/bilibili_pgc_api.dart';
 
-import 'package:pure_live/app/router/app_router.dart';
-import 'package:pure_live/exports/common_export.dart';
-import 'package:pure_live/modules/media/api/bilibili_pgc_api.dart';
-import 'package:pure_live/modules/media/models/models.dart';
-
-/// The PGC shelf, newBV's 影视: one tab per season type (番剧/国创/纪录片/
-/// 电影/电视剧), each a paged cover grid with the rating badge.
 class VideoPgcPage extends ConsumerStatefulWidget {
   const VideoPgcPage({super.key});
 
@@ -98,9 +91,7 @@ class _VideoPgcPageState extends ConsumerState<VideoPgcPage> {
         // The shared TV tab bar (same bar the areas page uses): one tab per
         // season type, the refresh line shows the category load.
         TvTabBar(
-          tabs: [
-            for (final (_, labelKey) in _types) TvTabItemData(title: i18n(labelKey)),
-          ],
+          tabs: [for (final (_, labelKey) in _types) TvTabItemData(title: i18n(labelKey))],
           currentIndex: _selected,
           refreshing: _loading,
           onTabChange: _select,
@@ -110,43 +101,37 @@ class _VideoPgcPageState extends ConsumerState<VideoPgcPage> {
           child: _errors[_type] != null && (items?.isEmpty ?? true)
               ? AppStatusView(type: AppStatusType.error, title: i18n('load_failed'), subtitle: _errors[_type])
               : items == null
-                  ? AppStatusView(type: AppStatusType.loading, title: '', subtitle: '')
-                  : items.isEmpty
-                      ? AppStatusView(type: AppStatusType.empty, title: i18n('video_pgc_empty'), subtitle: '')
-                      : DpadRegion(
-                          horizontalEdge: DpadEdgeBehavior.leave,
-                          child: GridView.builder(
-                            padding: EdgeInsets.all(24.sp),
-                            gridDelegate: TvAdaptiveGrid.fixed(
-                              context,
-                              crossAxisCount: 5,
-                              mainAxisSpacing: 16.w,
-                              crossAxisSpacing: 16.w,
-                              childAspectRatio: 0.72,
-                            ),
-                            itemCount: items.length + (_hasMoreOf[_type] == true || _loading ? 1 : 0),
-                            itemBuilder: (context, index) {
-                              if (index >= items.length) {
-                                return Center(
-                                  child: _loading
-                                      ? SizedBox(
-                                          width: 32.sp,
-                                          height: 32.sp,
-                                          child: CircularProgressIndicator(strokeWidth: 3.sp, color: accent),
-                                        )
-                                      : const SizedBox.shrink(),
-                                );
-                              }
-                              final nearEnd = index >= items.length - 5;
-                              if (nearEnd && !_loading && _hasMoreOf[_type] == true) {
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (mounted) _loadMore();
-                                });
-                              }
-                              return _PgcCard(item: items[index]);
-                            },
-                          ),
-                        ),
+              ? AppStatusView(type: AppStatusType.loading, title: '', subtitle: '')
+              : items.isEmpty
+              ? AppStatusView(type: AppStatusType.empty, title: i18n('video_pgc_empty'), subtitle: '')
+              : DpadRegion(
+                  horizontalEdge: DpadEdgeBehavior.leave,
+                  child: GridView.builder(
+                    padding: EdgeInsets.all(24.ts(context)),
+                    gridDelegate: ThemeSettingsController.cardGridDelegate(context, ref),
+                    itemCount: items.length + (_hasMoreOf[_type] == true || _loading ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index >= items.length) {
+                        return Center(
+                          child: _loading
+                              ? SizedBox(
+                                  width: 32.ts(context),
+                                  height: 32.ts(context),
+                                  child: CircularProgressIndicator(strokeWidth: 3.ts(context), color: accent),
+                                )
+                              : const SizedBox.shrink(),
+                        );
+                      }
+                      final nearEnd = index >= items.length - 5;
+                      if (nearEnd && !_loading && _hasMoreOf[_type] == true) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) _loadMore();
+                        });
+                      }
+                      return _PgcCard(item: items[index]);
+                    },
+                  ),
+                ),
         ),
       ],
     );
@@ -166,11 +151,12 @@ class _PgcCard extends StatelessWidget {
     return TvFocusable(
       onTap: () => VideoSeasonRoute(item).push(context),
       builder: (context, focused, child) => AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
+        duration: TvFocusStyle.focusDuration(focused),
+        curve: TvFocusStyle.curve,
         decoration: BoxDecoration(
-          color: tvTheme.cardColor,
-          borderRadius: BorderRadius.circular(14.sp),
-          border: Border.all(color: focused ? accent : Colors.transparent, width: 2.5.sp),
+          color: focused ? tvTheme.focusedCardColor : tvTheme.cardColor,
+          borderRadius: BorderRadius.circular(24.ts(context)),
+          border: Border.all(color: focused ? accent : Colors.transparent, width: 2.ts(context)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,70 +167,61 @@ class _PgcCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(14.sp)),
+                    borderRadius: BorderRadius.circular(24.ts(context)),
                     child: CachedNetworkImage(
                       imageUrl: item.cover,
                       fit: BoxFit.cover,
                       memCacheWidth: 480,
-                      errorWidget: (_, _, _) => Container(color: Colors.black26),
+                      errorWidget: (_, _, _) => ColoredBox(color: tvTheme.cardColor),
                     ),
                   ),
                   if (item.badge.isNotEmpty)
                     Positioned(
-                      left: 8.sp,
-                      top: 8.sp,
-                      child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8.sp, vertical: 3.sp),
-                        decoration: BoxDecoration(
-                          color: accent.withValues(alpha: 0.9),
-                          borderRadius: BorderRadius.circular(8.sp),
-                        ),
-                        child: Text(item.badge, style: AppTextStyles.t14.copyWith(fontWeight: FontWeight.w600, color: Colors.white)),
-                      ),
+                      left: 12.sp,
+                      top: 12.sp,
+                      child: TvCoverChip(label: item.badge),
                     ),
                   if (item.rating > 0)
                     Positioned(
                       right: 8.sp,
                       bottom: 8.sp,
-                      child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8.sp, vertical: 3.sp),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.65),
-                          borderRadius: BorderRadius.circular(8.sp),
-                        ),
-                        child: Text(
-                          item.rating.toStringAsFixed(1),
-                          style: AppTextStyles.t14.copyWith(fontWeight: FontWeight.w600, color: Colors.amberAccent),
-                        ),
+                      child: TvCoverChip(
+                        icon: Icons.star_rounded,
+                        label: item.rating.toStringAsFixed(1),
+                        textColor: Colors.amberAccent,
                       ),
                     ),
                 ],
               ),
             ),
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: EdgeInsets.all(8.sp),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.t16.copyWith(fontWeight: FontWeight.w600, color: tvTheme.primaryTextColor),
+            // The info block sizes itself; the cover above takes everything
+            // that remains — the room card's rule, so the card's height is
+            // the grid cell's, not taller.
+            Padding(
+              padding: EdgeInsets.all(10.ts(context)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TvMarqueeText(
+                    text: item.title,
+                    isFocused: focused,
+                    style: AppTextStyles.t14.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: focused ? tvTheme.onFocusedCard : tvTheme.primaryTextColor,
+                    ),
+                  ),
+                  SizedBox(height: 4.ts(context)),
+                  if (item.subtitle.isNotEmpty)
+                    Text(
+                      item.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.t14.copyWith(
+                        color: focused ? tvTheme.onFocusedCardSecondary : tvTheme.secondaryTextColor,
                       ),
                     ),
-                    if (item.subtitle.isNotEmpty)
-                      Text(
-                        item.subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.t14.copyWith(color: tvTheme.secondaryTextColor),
-                      ),
-                  ],
-                ),
+                ],
               ),
             ),
           ],

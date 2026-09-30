@@ -2,13 +2,12 @@ import 'dart:convert';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import 'package:pure_live/modules/media/api/bilibili_ugc_api.dart';
-import 'package:pure_live/modules/media/models/models.dart';
+import 'package:pure_live/modules/vod/api/bilibili_ugc_api.dart';
+import 'package:pure_live/modules/vod/models/models.dart';
 import 'package:pure_live/exports/common_export.dart';
 
 part 'music_library_controller.g.dart';
 
-/// A locally-created playlist (自建歌单): named by the user, tracks added
 /// from the player, ordered in place. Persisted inside the library's Hive.
 class MusicUserPlaylist {
   const MusicUserPlaylist({
@@ -49,24 +48,15 @@ class MusicLibraryState {
     this.followedUps = const [],
     this.likedSongs = const [],
     this.playlists = const [],
-    this.excludedParts = const {},
   });
 
   final List<MusicArchive> favorites;
   final List<MusicArchive> recents;
 
-  /// Followed uploaders (作者), separate from the album favorites.
   final List<MusicUp> followedUps;
 
-  /// Songs hearted from the player — the 喜欢 list, one entry per part.
   final List<MusicTrack> likedSongs;
 
-  /// Per-archive skipped parts (跳过分 P): bvid -> excluded cids. A part here
-  /// vanishes from every queue the archive materializes into; when all parts
-  /// of an archive are excluded the archive simply has nothing to play.
-  final Map<String, List<int>> excludedParts;
-
-  /// Locally created playlists (自建歌单).
   final List<MusicUserPlaylist> playlists;
 
   /// Reactive favorite check for widgets holding the state.
@@ -75,16 +65,6 @@ class MusicLibraryState {
   bool isFollowingUp(int mid) => followedUps.any((u) => u.mid == mid);
 
   bool isSongLiked(String trackId) => likedSongs.any((t) => t.id == trackId);
-
-  List<int> excludedCids(String bvid) => excludedParts[bvid] ?? const [];
-
-  /// The archive's parts with the excluded ones removed — the single filter
-  /// every queue built from this archive must go through.
-  List<MusicTrack> playableParts(MusicArchive archive) {
-    final excluded = (excludedParts[archive.bvid] ?? const <int>[]).toSet();
-    if (excluded.isEmpty) return archive.tracks;
-    return archive.tracks.where((t) => !excluded.contains(t.part.cid)).toList();
-  }
 
   /// User playlists in display order: pinned first (newest pin highest), the
   /// rest newest-created first. The default liked playlist is not in here —
@@ -103,7 +83,6 @@ class MusicLibraryState {
     List<MusicUp>? followedUps,
     List<MusicTrack>? likedSongs,
     List<MusicUserPlaylist>? playlists,
-    Map<String, List<int>>? excludedParts,
   }) {
     return MusicLibraryState(
       favorites: favorites ?? this.favorites,
@@ -111,14 +90,12 @@ class MusicLibraryState {
       followedUps: followedUps ?? this.followedUps,
       likedSongs: likedSongs ?? this.likedSongs,
       playlists: playlists ?? this.playlists,
-      excludedParts: excludedParts ?? this.excludedParts,
     );
   }
 }
 
 @Riverpod(keepAlive: true)
 class MusicLibraryController extends _$MusicLibraryController {
-  /// The default 喜欢 playlist: the hearted songs, mounted on top of the
   /// playlist shelf and not deletable. Its tracks live in their own key.
   static const String likedPlaylistId = 'liked';
   static const int _recentsCap = 50;
@@ -131,7 +108,6 @@ class MusicLibraryController extends _$MusicLibraryController {
       followedUps: _loadUps('musicFollowedUps'),
       likedSongs: _loadTracks('musicLikedSongs'),
       playlists: _loadPlaylists(),
-      excludedParts: _loadExcludedParts(),
     );
   }
 
@@ -183,7 +159,6 @@ class MusicLibraryController extends _$MusicLibraryController {
   ///
   /// Writes through to the bilibili relation as well (best effort, when
   /// logged in): the UP-space page reads the platform's state, and a local-only
-  /// follow would show up as 未关注 there.
   void toggleFollowUp(MusicUp up) {
     final next = List<MusicUp>.from(state.followedUps);
     final existing = next.indexWhere((u) => u.mid == up.mid);
@@ -207,8 +182,6 @@ class MusicLibraryController extends _$MusicLibraryController {
 
   // ---------------------------------------------------------------- song likes
 
-  /// Hearts / unhearts a song (歌曲级红心). Liked songs live outside any
-  /// album: they queue in their own order on the 喜欢 page.
   void toggleLikeSong(MusicTrack track) {
     final next = List<MusicTrack>.from(state.likedSongs);
     final existing = next.indexWhere((t) => t.id == track.id);
@@ -223,7 +196,6 @@ class MusicLibraryController extends _$MusicLibraryController {
     _persistTracks('musicLikedSongs', next);
   }
 
-  /// Unlikes without toggling — the 喜欢 page's removal must never re-add.
   void removeLikedSong(String trackId) {
     final next = List<MusicTrack>.from(state.likedSongs)..removeWhere((t) => t.id == trackId);
     if (next.length == state.likedSongs.length) return;
@@ -251,7 +223,13 @@ class MusicLibraryController extends _$MusicLibraryController {
     ToastUtil.show(i18n('music_playlist_deleted'));
   }
 
-  /// Pins / unpins a playlist (置顶).
+  /// Empties a playlist's tracks, keeping the playlist itself on the shelf.
+  void clearPlaylist(String id) {
+    final at = state.playlists.indexWhere((p) => p.id == id);
+    if (at < 0) return;
+    _replacePlaylist(at, state.playlists[at].copyWith(tracks: const []));
+  }
+
   void togglePlaylistPin(String id) {
     final at = state.playlists.indexWhere((p) => p.id == id);
     if (at < 0) return;
@@ -270,7 +248,6 @@ class MusicLibraryController extends _$MusicLibraryController {
     ToastUtil.show(i18n('music_playlist_renamed'));
   }
 
-  /// Moves a liked song to the top of the 喜欢 list (置顶).
   void pinLikedSong(String trackId) {
     final at = state.likedSongs.indexWhere((t) => t.id == trackId);
     if (at <= 0) return;
@@ -294,7 +271,6 @@ class MusicLibraryController extends _$MusicLibraryController {
   }
 
   /// Batch-adds [tracks] to a playlist, silently skipping the ones it already
-  /// holds — the batch save (关注 albums → 歌单) toasts a summary once instead
   /// of a toast per track. Returns how many actually landed.
   int addTracksToPlaylist(String id, List<MusicTrack> tracks) {
     final at = state.playlists.indexWhere((p) => p.id == id);
@@ -321,7 +297,6 @@ class MusicLibraryController extends _$MusicLibraryController {
     );
   }
 
-  /// Moves a track by [delta] slots — the playlist page's 排序 step.
   void moveTrackInPlaylist(String id, int index, int delta) {
     final at = state.playlists.indexWhere((p) => p.id == id);
     if (at < 0) return;
@@ -370,48 +345,6 @@ class MusicLibraryController extends _$MusicLibraryController {
 
   void _persistUps(String key, List<MusicUp> list) {
     HivePrefUtil.setStringList(key, [for (final u in list) jsonEncode(u.toJson())]);
-  }
-
-  // ------------------------------------------------------------- 分 P 跳过
-
-  List<int> excludedCids(String bvid) => state.excludedCids(bvid);
-
-  void toggleExcludedPart(String bvid, int cid) {
-    final map = {...state.excludedParts};
-    final cids = [...(map[bvid] ?? const <int>[])];
-    if (cids.contains(cid)) {
-      cids.remove(cid);
-    } else {
-      cids.add(cid);
-    }
-    if (cids.isEmpty) {
-      map.remove(bvid);
-    } else {
-      map[bvid] = cids;
-    }
-    state = state.copyWith(excludedParts: Map.unmodifiable(map));
-    _persistExcludedParts(map);
-  }
-
-  Map<String, List<int>> _loadExcludedParts() {
-    try {
-      final raw = HivePrefUtil.getString('musicExcludedParts');
-      if (raw == null || raw.isEmpty) return const {};
-      final json = jsonDecode(raw);
-      if (json is! Map<String, dynamic>) return const {};
-      return {
-        for (final entry in json.entries)
-          entry.key: [
-            for (final v in (entry.value as List?) ?? const <dynamic>[]) int.tryParse(v?.toString() ?? '') ?? 0,
-          ]..remove(0),
-      };
-    } catch (_) {
-      return const {};
-    }
-  }
-
-  void _persistExcludedParts(Map<String, List<int>> map) {
-    HivePrefUtil.setString('musicExcludedParts', jsonEncode(map));
   }
 
   /// Track-list codec shared by liked songs and local playlists: archives are

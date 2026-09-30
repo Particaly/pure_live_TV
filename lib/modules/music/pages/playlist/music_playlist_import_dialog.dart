@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:pure_live/exports/common_export.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pure_live/modules/vod/models/models.dart';
 import 'package:pure_live/modules/music/api/music_provider.dart';
-import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
 import 'package:pure_live/modules/music/services/playlist_matcher.dart';
-import 'package:pure_live/modules/media/models/models.dart';
 import 'package:pure_live/modules/music/controllers/library/music_library_controller.dart';
 
-/// 歌单导入, the bmsc playlist importer: one of the other music platforms
-/// (网易云 / QQ 音乐 / 酷狗音乐) plus the playlist id (or a pasted share link —
 /// the netease `playlist?id=` form is detected), then every track triple is
 /// searched on bilibili and the best-scoring archive joins the new local
 /// playlist. One match per ~1.2s, the reference's rate.
@@ -19,7 +16,7 @@ Future<void> showImportPlaylistDialog(BuildContext context, WidgetRef ref) async
     builder: (_) => TvDialog(
       title: i18n('music_import_platform'),
       cancelText: i18n('cancel'),
-      width: 560.sp,
+      width: 560.ts(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -27,7 +24,7 @@ Future<void> showImportPlaylistDialog(BuildContext context, WidgetRef ref) async
             TvDialogOptionTile(
               title: i18n(option.$2),
               subtitle: option.$3,
-              icon: Icon(option.$1, size: 26.sp),
+              icon: Icon(option.$1, size: 26.ts(context)),
               showCheck: false,
               autofocus: index == 0,
               onTap: () => Navigator.of(context).pop(option.$4),
@@ -60,7 +57,7 @@ Future<void> showImportPlaylistDialog(BuildContext context, WidgetRef ref) async
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           TvInputField(controller: nameController, hint: i18n('music_playlist_name_hint'), maxLines: 1),
-          SizedBox(height: 12.sp),
+          SizedBox(height: 12.ts(context)),
           TvInputField(controller: idController, hint: '${i18n('music_import_id_hint')} ($platform:...)', maxLines: 1),
         ],
       ),
@@ -102,7 +99,7 @@ Future<void> showImportPlaylistDialog(BuildContext context, WidgetRef ref) async
     context: context,
     builder: (_) => TvDialog(
       title: i18n('music_import_playlist'),
-      width: 640.sp,
+      width: 640.ts(context),
       child: StatefulBuilder(
         builder: (context, setDialogState) {
           // The loop runs once per dialog; the builder only paints progress.
@@ -133,13 +130,13 @@ Future<void> showImportPlaylistDialog(BuildContext context, WidgetRef ref) async
                     : '${i18n('music_import_matching')} ${processed + 1 > triples.length ? triples.length : processed + 1}/${triples.length}',
                 style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: context.tvTheme.primaryTextColor),
               ),
-              SizedBox(height: 16.sp),
+              SizedBox(height: 16.ts(context)),
               LinearProgressIndicator(
                 value: triples.isEmpty ? 0 : processed / triples.length,
-                minHeight: 8.sp,
+                minHeight: 8.ts(context),
                 color: context.tvTheme.focusColor,
               ),
-              SizedBox(height: 16.sp),
+              SizedBox(height: 16.ts(context)),
               Text(
                 '${i18n('music_import_matched')} ${matched.length}',
                 style: AppTextStyles.t16.copyWith(
@@ -147,7 +144,7 @@ Future<void> showImportPlaylistDialog(BuildContext context, WidgetRef ref) async
                   color: context.tvTheme.secondaryTextColor,
                 ),
               ),
-              SizedBox(height: 24.sp),
+              SizedBox(height: 24.ts(context)),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [

@@ -1,16 +1,14 @@
-import 'package:flutter/material.dart';
-import 'package:pure_live/app/router/app_router.dart';
-import 'package:pure_live/exports/common_export.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
-import 'package:pure_live/modules/media/models/models.dart';
+import 'dart:async';
+import 'package:pure_live/exports/exports.dart';
+import 'package:pure_live/modules/vod/models/models.dart';
 import 'package:pure_live/modules/music/services/music_list_reveal.dart';
-import 'package:pure_live/modules/media/controllers/music_player_controller.dart';
+import 'package:pure_live/modules/vod/controllers/music_player_controller.dart';
+import 'package:pure_live/modules/music/pages/playlist/music_playlist_dialogs.dart';
+import 'package:pure_live/modules/music/controllers/library/music_library_controller.dart';
 import 'package:pure_live/modules/music/controllers/playlist/music_playlist_sync_controller.dart';
 
 /// One synced playlist's track table (bmsc's fav detail): an in-list search
-/// filter, play all with the excluded parts filtered out, and the 排除分P
-/// toggle on the focused tile.
+/// filter and play all.
 class MusicFavDetailPage extends ConsumerStatefulWidget {
   const MusicFavDetailPage({super.key, required this.folder});
 
@@ -23,6 +21,64 @@ class MusicFavDetailPage extends ConsumerStatefulWidget {
 class _MusicFavDetailPageState extends ConsumerState<MusicFavDetailPage> {
   final TextEditingController _filter = TextEditingController();
   final MusicListReveal _reveal = MusicListReveal();
+
+  /// land on every selected track (the bilibili-music checkbox table).
+  bool _selectMode = false;
+  final Set<String> _selectedIds = {};
+
+  void _toggleSelectMode() {
+    setState(() {
+      _selectedIds.clear();
+      _selectMode = !_selectMode;
+    });
+  }
+
+  void _toggleSelected(String id) {
+    setState(() => _selectedIds.contains(id) ? _selectedIds.remove(id) : _selectedIds.add(id));
+  }
+
+  void _selectAll(List<MusicTrack> tracks) {
+    setState(() {
+      if (_selectedIds.length >= tracks.length) {
+        _selectedIds.clear();
+      } else {
+        _selectedIds
+          ..clear()
+          ..addAll(tracks.map((t) => t.id));
+      }
+    });
+  }
+
+  List<MusicTrack> _selectedTracks(List<MusicTrack> tracks) =>
+      tracks.where((t) => _selectedIds.contains(t.id)).toList();
+
+  void _batchLike(List<MusicTrack> selected) {
+    final library = ref.read(musicLibraryControllerProvider);
+    final libraryController = ref.read(musicLibraryControllerProvider.notifier);
+    var added = 0;
+    for (final track in selected) {
+      if (!library.isSongLiked(track.id)) {
+        libraryController.toggleLikeSong(track);
+        added++;
+      }
+    }
+    ToastUtil.show(i18n('music_batch_liked', args: {'count': '$added'}));
+  }
+
+  Future<void> _batchAddToPlaylist(List<MusicTrack> selected) async {
+    if (selected.isEmpty) {
+      ToastUtil.show(i18n('music_batch_none_selected'));
+      return;
+    }
+    final playlistId = await showPlaylistPicker(context, ref);
+    if (playlistId == null || !mounted) return;
+    final libraryController = ref.read(musicLibraryControllerProvider.notifier);
+    for (final track in selected) {
+      libraryController.addTrackToPlaylist(playlistId, track);
+    }
+    ToastUtil.show(i18n('music_batch_added', args: {'count': '${selected.length}'}));
+    setState(() => _selectedIds.clear());
+  }
 
   @override
   void dispose() {
@@ -52,41 +108,87 @@ class _MusicFavDetailPageState extends ConsumerState<MusicFavDetailPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(24.sp, 12.sp, 24.sp, 8.sp),
+            padding: EdgeInsets.fromLTRB(24.ts(context), 12.ts(context), 24.ts(context), 8.ts(context)),
             child: Row(
               children: [
                 Text(
                   '${tracks.length} ${i18n('music_tracks_unit')}',
                   style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: tvTheme.secondaryTextColor),
                 ),
-                SizedBox(width: 16.sp),
-                SizedBox(
-                  width: 320.sp,
-                  child: TvInputField(
-                    controller: _filter,
-                    hint: i18n('music_playlist_filter_hint'),
-                    height: 56.sp,
-                    maxLines: 1,
-                    onChanged: (_) => setState(() {}),
+                SizedBox(width: 16.ts(context)),
+                if (_selectMode) ...[
+                  TvButton(
+                    title: _selectedIds.length >= tracks.length && tracks.isNotEmpty
+                        ? i18n('music_batch_select_none')
+                        : i18n('music_batch_select_all'),
+                    icon: Icon(
+                      _selectedIds.length >= tracks.length && tracks.isNotEmpty
+                          ? Icons.deselect_rounded
+                          : Icons.select_all_rounded,
+                      size: 24.ts(context),
+                    ),
+                    size: TvButtonSize.mini,
+                    isSecondary: true,
+                    onTap: tracks.isEmpty ? null : () => _selectAll(tracks),
                   ),
-                ),
-                SizedBox(width: 16.sp),
-                Text(i18n('music_excluded_hint'), style: AppTextStyles.t14.copyWith(color: tvTheme.secondaryTextColor)),
-                const Spacer(),
-                TvButton(
-                  title: i18n('music_play_all'),
-                  icon: Icon(Icons.play_circle_fill_rounded, size: 26.sp),
-                  size: TvButtonSize.mini,
-                  onTap: tracks.isEmpty ? null : () => _playAll(context, ref, tracks),
-                ),
-                SizedBox(width: 12.sp),
-                TvButton(
-                  title: i18n('music_sync_this'),
-                  icon: Icon(Icons.sync_rounded, size: 24.sp),
-                  size: TvButtonSize.mini,
-                  isSecondary: true,
-                  onTap: () => ref.read(musicPlaylistSyncControllerProvider.notifier).syncFolder(folder.id),
-                ),
+                  SizedBox(width: 12.ts(context)),
+                  Text(
+                    i18n('music_batch_selected_count', args: {'count': '${_selectedIds.length}'}),
+                    style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w600, color: tvTheme.focusColor),
+                  ),
+                  const Spacer(),
+                  TvButton(
+                    title: i18n('music_like'),
+                    icon: Icon(Icons.favorite_rounded, size: 24.ts(context)),
+                    size: TvButtonSize.mini,
+                    isSecondary: true,
+                    onTap: _selectedIds.isEmpty ? null : () => _batchLike(_selectedTracks(tracks)),
+                  ),
+                  SizedBox(width: 12.ts(context)),
+                  TvButton(
+                    title: i18n('music_add_to_playlist'),
+                    icon: Icon(Icons.playlist_add_rounded, size: 24.ts(context)),
+                    size: TvButtonSize.mini,
+                    isSecondary: true,
+                    onTap: _selectedIds.isEmpty ? null : () => unawaited(_batchAddToPlaylist(_selectedTracks(tracks))),
+                  ),
+                  SizedBox(width: 12.ts(context)),
+                  TvButton(title: i18n('cancel'), size: TvButtonSize.mini, isSecondary: true, onTap: _toggleSelectMode),
+                ] else ...[
+                  SizedBox(
+                    width: 320.ts(context),
+                    child: TvInputField(
+                      controller: _filter,
+                      hint: i18n('music_playlist_filter_hint'),
+                      height: 56.ts(context),
+                      maxLines: 1,
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  const Spacer(),
+                  TvButton(
+                    title: i18n('music_batch_select'),
+                    icon: Icon(Icons.checklist_rounded, size: 24.ts(context)),
+                    size: TvButtonSize.mini,
+                    isSecondary: true,
+                    onTap: tracks.isEmpty ? null : _toggleSelectMode,
+                  ),
+                  SizedBox(width: 12.ts(context)),
+                  TvButton(
+                    title: i18n('music_play_all'),
+                    icon: Icon(Icons.play_circle_fill_rounded, size: 26.ts(context)),
+                    size: TvButtonSize.mini,
+                    onTap: tracks.isEmpty ? null : () => _playAll(context, ref, tracks),
+                  ),
+                  SizedBox(width: 12.ts(context)),
+                  TvButton(
+                    title: i18n('music_sync_this'),
+                    icon: Icon(Icons.sync_rounded, size: 24.ts(context)),
+                    size: TvButtonSize.mini,
+                    isSecondary: true,
+                    onTap: () => ref.read(musicPlaylistSyncControllerProvider.notifier).syncFolder(folder.id),
+                  ),
+                ],
               ],
             ),
           ),
@@ -94,23 +196,19 @@ class _MusicFavDetailPageState extends ConsumerState<MusicFavDetailPage> {
             child: tracks.isEmpty
                 ? AppStatusView(type: AppStatusType.empty, title: i18n('music_sync_not_yet'), subtitle: '')
                 : ListView.builder(
-                    padding: EdgeInsets.fromLTRB(24.sp, 4.sp, 24.sp, 24.sp),
+                    padding: EdgeInsets.fromLTRB(24.ts(context), 4.ts(context), 24.ts(context), 24.ts(context)),
                     itemCount: tracks.length,
                     itemBuilder: (context, index) {
                       final track = tracks[index];
                       _reveal.bindRow(track, context);
+                      final trackId = track.id;
                       return _TrackRow(
                         track: track,
                         index: index,
                         focusNode: _reveal.nodeFor(track),
-                        excluded: ref
-                            .read(musicPlaylistSyncControllerProvider.notifier)
-                            .excludedParts(track.archive.bvid)
-                            .contains(track.part.cid),
-                        onPlay: () => _playFrom(context, ref, tracks, index),
-                        onToggleExcluded: () => ref
-                            .read(musicPlaylistSyncControllerProvider.notifier)
-                            .toggleExcludedPart(track.archive.bvid, track.part.cid),
+                        selectMode: _selectMode,
+                        selected: _selectedIds.contains(trackId),
+                        onPlay: () => _selectMode ? _toggleSelected(trackId) : _playFrom(context, ref, tracks, index),
                       );
                     },
                   ),
@@ -121,18 +219,14 @@ class _MusicFavDetailPageState extends ConsumerState<MusicFavDetailPage> {
   }
 
   Future<void> _playAll(BuildContext context, WidgetRef ref, List<MusicTrack> tracks) async {
-    final filtered = ref.read(musicPlaylistSyncControllerProvider.notifier).filterExcluded(tracks);
-    ref.read(musicPlayerControllerProvider.notifier).playQueue(filtered);
+    ref.read(musicPlayerControllerProvider.notifier).playQueue(tracks);
     await const MusicPlayerRoute().push(context);
     if (!mounted) return;
-    // The reveal walks the visible list, not the filtered queue.
     _reveal.reveal(this.context, tracks, ref.read(musicPlayerControllerProvider).current);
   }
 
   Future<void> _playFrom(BuildContext context, WidgetRef ref, List<MusicTrack> tracks, int index) async {
-    final filtered = ref.read(musicPlaylistSyncControllerProvider.notifier).filterExcluded(tracks);
-    final at = filtered.indexWhere((t) => t.id == tracks[index].id);
-    ref.read(musicPlayerControllerProvider.notifier).playQueue(filtered, startIndex: at < 0 ? 0 : at);
+    ref.read(musicPlayerControllerProvider.notifier).playQueue(tracks, startIndex: index);
     await const MusicPlayerRoute().push(context);
     if (!mounted) return;
     _reveal.reveal(this.context, tracks, ref.read(musicPlayerControllerProvider).current);
@@ -143,17 +237,20 @@ class _TrackRow extends StatelessWidget {
   const _TrackRow({
     required this.track,
     required this.index,
-    required this.excluded,
     required this.onPlay,
-    required this.onToggleExcluded,
+    this.selectMode = false,
+    this.selected = false,
     this.focusNode,
   });
 
   final MusicTrack track;
   final int index;
-  final bool excluded;
   final VoidCallback onPlay;
-  final VoidCallback onToggleExcluded;
+
+  /// Batch mode: the leading slot becomes a checkbox and taps toggle
+  /// membership instead of playing.
+  final bool selectMode;
+  final bool selected;
 
   /// The list's per-row node, for the return-from-player reveal.
   final FocusNode? focusNode;
@@ -162,29 +259,38 @@ class _TrackRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final tvTheme = context.tvTheme;
     final accent = tvTheme.focusColor;
+    // No fixed height: the row is as tall as its two labels plus scaled
+    // padding — the old fixed 72.ts(context) painted the yellow overflow stripe once
+    // the enlarged font met the panel lift, exactly what the playlist track
+    // rows fixed by sizing to their content.
+    final double textScale = TvTextScale.factorOf(context);
 
     return TvFocusable(
       focusNode: focusNode,
       onTap: onPlay,
-      onLongPress: onToggleExcluded,
       builder: (context, focused, child) => AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         margin: EdgeInsets.only(bottom: 8.sp),
-        height: 72.sp,
-        padding: EdgeInsets.symmetric(horizontal: 16.sp),
+        padding: EdgeInsets.symmetric(horizontal: 16.ts(context) * textScale, vertical: 12.ts(context) * textScale),
         decoration: BoxDecoration(
-          color: excluded ? tvTheme.cardColor.withValues(alpha: 0.4) : tvTheme.cardColor,
-          borderRadius: BorderRadius.circular(14.sp),
-          border: Border.all(color: focused ? accent : Colors.transparent, width: 2.sp),
+          color: tvTheme.cardColor,
+          borderRadius: BorderRadius.circular(14.ts(context)),
+          border: Border.all(color: focused ? accent : Colors.transparent, width: 2.ts(context)),
         ),
         child: Row(
           children: [
             SizedBox(
-              width: 44.sp,
-              child: Text(
-                '${index + 1}',
-                style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: tvTheme.secondaryTextColor),
-              ),
+              width: 44.ts(context) * textScale,
+              child: selectMode
+                  ? Icon(
+                      selected ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                      size: 30.ts(context),
+                      color: selected ? accent : tvTheme.secondaryTextColor,
+                    )
+                  : Text(
+                      '${index + 1}',
+                      style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: tvTheme.secondaryTextColor),
+                    ),
             ),
             Expanded(
               child: Column(
@@ -195,10 +301,7 @@ class _TrackRow extends StatelessWidget {
                     track.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.t16.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: excluded ? tvTheme.secondaryTextColor : tvTheme.primaryTextColor,
-                    ),
+                    style: AppTextStyles.t16.copyWith(fontWeight: FontWeight.w500, color: tvTheme.primaryTextColor),
                   ),
                   Text(
                     track.archive.upName,
@@ -209,14 +312,6 @@ class _TrackRow extends StatelessWidget {
                 ],
               ),
             ),
-            if (focused)
-              TvIconButton(
-                icon: Icon(excluded ? Icons.filter_alt_off_rounded : Icons.filter_alt_rounded),
-                label: i18n(excluded ? 'music_exclude_off' : 'music_exclude_on'),
-                size: TvIconButtonSize.small,
-                isSecondary: true,
-                onTap: onToggleExcluded,
-              ),
           ],
         ),
       ),

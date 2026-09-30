@@ -51,9 +51,9 @@ class PlatformDisplayOrderSectionPage extends ConsumerWidget {
           ],
         ),
         if (hidden.isNotEmpty) ...[
-          SizedBox(height: 12.sp),
+          SizedBox(height: 12.ts(context)),
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4.sp),
+            padding: EdgeInsets.symmetric(horizontal: 4.ts(context)),
             child: Text(
               i18n('platform_display_hidden_hint', args: {'names': hidden.map((site) => site.name).join(' · ')}),
               style: AppTextStyles.t14.copyWith(fontWeight: FontWeight.w500, color: context.tvTheme.secondaryTextColor),
@@ -131,16 +131,17 @@ class _SiteOrderTile extends StatelessWidget {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.keyboard_arrow_up_rounded, size: 26.sp, color: canMoveUp ? accent : muted),
-            SizedBox(width: 4.sp),
+            Icon(Icons.keyboard_arrow_up_rounded, size: 26.ts(context), color: canMoveUp ? accent : muted),
+            SizedBox(width: 4.ts(context)),
             Text(
               '$position/$total',
-              style: AppTextStyles.t20.copyWith(fontWeight: FontWeight.w600, 
+              style: AppTextStyles.t20.copyWith(
+                fontWeight: FontWeight.w600,
                 color: focused ? tvTheme.focusColor : tvTheme.primaryTextColor,
               ),
             ),
-            SizedBox(width: 4.sp),
-            Icon(Icons.keyboard_arrow_down_rounded, size: 26.sp, color: canMoveDown ? accent : muted),
+            SizedBox(width: 4.ts(context)),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 26.ts(context), color: canMoveDown ? accent : muted),
           ],
         );
       },

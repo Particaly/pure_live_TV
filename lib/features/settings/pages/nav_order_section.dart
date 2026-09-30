@@ -45,9 +45,9 @@ class NavOrderSectionPage extends ConsumerWidget {
           ],
         ),
         if (hidden.isNotEmpty) ...[
-          SizedBox(height: 12.sp),
+          SizedBox(height: 12.ts(context)),
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4.sp),
+            padding: EdgeInsets.symmetric(horizontal: 4.ts(context)),
             child: Text(
               '${i18n('ui_move_hidden_entry')}: '
               '${hidden.map(navigationMenuTitle).join(' · ')}',
@@ -63,12 +63,7 @@ class NavOrderSectionPage extends ConsumerWidget {
   ///
   /// Each row names the entry that currently holds that position, so "3 · categories"
   /// reads as "put it where categories is now".
-  Future<void> _pickPosition(
-    BuildContext context,
-    WidgetRef ref,
-    List<HomeMenu> ordered,
-    int currentIndex,
-  ) async {
+  Future<void> _pickPosition(BuildContext context, WidgetRef ref, List<HomeMenu> ordered, int currentIndex) async {
     final int? target = await TvDialogUtils.showSelect<int>(
       context: context,
       title: i18n('ui_move_to'),
@@ -133,16 +128,17 @@ class _MenuOrderTile extends StatelessWidget {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.keyboard_arrow_up_rounded, size: 26.sp, color: canMoveUp ? accent : muted),
-            SizedBox(width: 4.sp),
+            Icon(Icons.keyboard_arrow_up_rounded, size: 26.ts(context), color: canMoveUp ? accent : muted),
+            SizedBox(width: 4.ts(context)),
             Text(
               '$position/$total',
-              style: AppTextStyles.t20.copyWith(fontWeight: FontWeight.w600, 
+              style: AppTextStyles.t20.copyWith(
+                fontWeight: FontWeight.w600,
                 color: focused ? tvTheme.focusColor : tvTheme.primaryTextColor,
               ),
             ),
-            SizedBox(width: 4.sp),
-            Icon(Icons.keyboard_arrow_down_rounded, size: 26.sp, color: canMoveDown ? accent : muted),
+            SizedBox(width: 4.ts(context)),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 26.ts(context), color: canMoveDown ? accent : muted),
           ],
         );
       },

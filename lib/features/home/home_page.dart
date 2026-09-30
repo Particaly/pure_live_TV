@@ -1,21 +1,24 @@
 import 'package:dpad/dpad.dart';
-import 'package:pure_live/modules/media/index.dart';
-import 'package:pure_live/features/hot/hot_page.dart';
+import 'package:pure_live/modules/vod/index.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:pure_live/app/router/app_router.dart';
 import 'package:pure_live/exports/package_export.dart';
-import 'package:pure_live/modules/music/music_page.dart';
-import 'package:pure_live/features/areas/areas_page.dart';
+import 'package:pure_live/app/router/app/app_router.dart';
+import 'package:pure_live/modules/live/hot/hot_page.dart';
+import 'package:pure_live/modules/music/music_section.dart';
 import 'package:pure_live/features/home/home_provider.dart';
-import 'package:pure_live/features/history/history_page.dart';
-import 'package:pure_live/modules/video/video_home_page.dart';
-import 'package:pure_live/features/search/tv_search_page.dart';
-import 'package:pure_live/features/favorite/favorite_page.dart';
+import 'package:pure_live/modules/video/video_section.dart';
+import 'package:pure_live/modules/live/areas/areas_page.dart';
+import 'package:pure_live/modules/music/music_section_view.dart';
+import 'package:pure_live/modules/video/video_section_view.dart';
 import 'package:pure_live/features/home/home_update_dialog.dart';
+import 'package:pure_live/modules/live/history/history_page.dart';
 import 'package:pure_live/features/home/exit_confirm_dialog.dart';
+import 'package:pure_live/modules/live/search/tv_search_page.dart';
 import 'package:pure_live/features/settings/tv_settings_page.dart';
-import 'package:pure_live/features/movie_playback/movie_playback_page.dart';
-import 'package:pure_live/features/favorite_areas/favorite_areas_page.dart';
+import 'package:pure_live/modules/live/favorite/favorite_page.dart';
+import 'package:pure_live/modules/music/widgets/music_mini_bar.dart';
+import 'package:pure_live/modules/live/movie_playback/movie_playback_page.dart';
+import 'package:pure_live/modules/live/favorite_areas/favorite_areas_page.dart';
 import 'package:pure_live/services/refresh_config/refresh_config_controller.dart';
 
 class HomePage extends ConsumerStatefulWidget {
@@ -42,7 +45,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   FocusNode _sectionNode(String key) => _sectionFocusNodes.putIfAbsent(key, FocusNode.new);
 
   /// The mode switch button (in the old backup slot): shows the active mode,
-  /// one OK press cycles 直播 → 视频 → 音乐.
   Widget _buildModeButton(AppMode mode, bool isExpanded, double textScale) {
     final (String label, String short, IconData icon) = switch (mode) {
       AppMode.live => (i18n('mode_live'), i18n('menu_short_mode_live'), Icons.live_tv_rounded),
@@ -65,82 +67,64 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
-  /// The mode picker dialog (bmsc's login-placeholder spirit: an explicit
-  /// choice, not a blind cycle). Picking a different mode first closes
-  /// whatever the previous module was playing — the speakers pass cleanly.
+  /// The mode picker (bmsc's login-placeholder spirit: an explicit choice,
+  /// TvDialog width, title, row recipe and cancel — only the icons and the
+  /// labels differ. Picking a different mode first closes whatever the
+  /// previous module was playing — the speakers pass cleanly.
   Future<void> _showModeDialog() async {
     final current = ref.read(appModeControllerProvider);
-    final selected = await showDialog<AppMode>(
+    final AppMode? selected = await showDialog<AppMode>(
       context: context,
       builder: (context) {
         final tvTheme = context.tvTheme;
-        final accent = tvTheme.focusColor;
-        return Dialog(
-          backgroundColor: tvTheme.cardColor,
-          // Compact on purpose: a mode picker is three rows, not a page.
-          insetPadding: EdgeInsets.symmetric(horizontal: 480.sp, vertical: 240.sp),
-          child: Padding(
-            padding: EdgeInsets.all(24.sp),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  i18n('mode_picker_title'),
-                  style: AppTextStyles.t22.copyWith(fontWeight: FontWeight.w700, color: tvTheme.primaryTextColor),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 16.sp),
-                for (final (mode, icon) in [
-                  (AppMode.live, Icons.live_tv_rounded),
-                  (AppMode.video, Icons.movie_outlined),
-                  (AppMode.music, Icons.library_music_outlined),
-                ])
-                  Padding(
-                    padding: EdgeInsets.only(top: 10.sp),
-                    child: TvFocusable(
-                      autofocus: mode == current,
-                      onTap: () => Navigator.pop(context, mode),
-                      builder: (context, focused, child) {
-                        final isSelected = mode == current;
-                        return AnimatedContainer(
-                          duration: const Duration(milliseconds: 120),
-                          height: 72.sp,
-                          padding: EdgeInsets.symmetric(horizontal: 20.sp),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? accent.withValues(alpha: 0.18)
-                                : focused
-                                ? accent.withValues(alpha: 0.08)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(14.sp),
-                            border: Border.all(color: focused ? accent : Colors.transparent, width: 2.sp),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(icon, size: 30.sp, color: isSelected ? accent : tvTheme.secondaryTextColor),
-                              SizedBox(width: 14.sp),
-                              Expanded(
-                                child: Text(
-                                  i18n(switch (mode) {
-                                    AppMode.live => 'mode_live',
-                                    AppMode.video => 'mode_video',
-                                    AppMode.music => 'mode_music',
-                                  }),
-                                  style: AppTextStyles.t20.copyWith(fontWeight: FontWeight.w600, 
-                                    color: isSelected ? accent : tvTheme.primaryTextColor,
-                                  ),
-                                ),
-                              ),
-                              if (isSelected) Icon(Icons.check_rounded, size: 26.sp, color: accent),
-                            ],
-                          ),
-                        );
-                      },
+
+        Widget modeRow(AppMode mode, IconData icon) {
+          final bool isSelected = mode == current;
+          return TvFocusable(
+            autofocus: isSelected,
+            onTap: () => Navigator.pop(context, mode),
+            builder: (context, focused, child) => AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              padding: EdgeInsets.symmetric(horizontal: 16.ts(context), vertical: 12.ts(context)),
+              decoration: BoxDecoration(
+                color: focused ? tvTheme.cardColor : Colors.transparent,
+                borderRadius: BorderRadius.circular(12.ts(context)),
+                border: Border.all(color: focused ? tvTheme.focusColor : Colors.transparent, width: 2.ts(context)),
+              ),
+              child: Row(
+                children: [
+                  Icon(icon, size: 26.ts(context), color: tvTheme.focusColor),
+                  SizedBox(width: 12.ts(context)),
+                  Expanded(
+                    child: Text(
+                      i18n(switch (mode) {
+                        AppMode.live => 'mode_live',
+                        AppMode.video => 'mode_video',
+                        AppMode.music => 'mode_music',
+                      }),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: tvTheme.primaryTextColor),
                     ),
                   ),
-              ],
+                  if (isSelected) Icon(Icons.check_rounded, size: 26.ts(context), color: tvTheme.focusColor),
+                ],
+              ),
             ),
+          );
+        }
+
+        return TvDialog(
+          title: i18n('mode_picker_title'),
+          cancelText: i18n('cancel'),
+          width: 640.ts(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              modeRow(AppMode.live, Icons.live_tv_rounded),
+              modeRow(AppMode.video, Icons.movie_outlined),
+              modeRow(AppMode.music, Icons.library_music_outlined),
+            ],
           ),
         );
       },
@@ -163,7 +147,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         return [
           for (final item in menuList)
             Padding(
-              padding: EdgeInsets.only(bottom: 20.sp * textScale),
+              padding: EdgeInsets.only(bottom: 20.sp),
               child: _buildAdaptiveItem(
                 ref: ref,
                 item: item,
@@ -176,10 +160,10 @@ class _HomePageState extends ConsumerState<HomePage> {
             ),
         ];
       case AppMode.music:
-        // Four rail destinations over the top-tab groups (see kMusicRailGroups):
-        // 搜索, then 歌单 on its own, then the discovery and library groups —
-        // the tabbed sections live behind the content pane's tab bar.
+        // Five rail destinations over the top-tab groups (see kMusicRailGroups):
+        // groups — the tabbed sections live behind the content pane's tab bar.
         const labels = <(String, IconData)>[
+          ('music_now_playing', Icons.queue_music_rounded),
           ('music_tab_search', Icons.search_rounded),
           ('music_playlists', Icons.playlist_add_check_rounded),
           ('music_discover', Icons.explore_outlined),
@@ -190,7 +174,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         return [
           for (final (index2, (labelKey, icon)) in labels.indexed)
             Padding(
-              padding: EdgeInsets.only(bottom: 20.sp * textScale),
+              padding: EdgeInsets.only(bottom: 20.sp),
               child: _buildAdaptiveItem(
                 ref: ref,
                 item: AppMenuItem(index: index2, title: i18n(labelKey), shortTitle: i18n(labelKey), icon: icon),
@@ -203,7 +187,6 @@ class _HomePageState extends ConsumerState<HomePage> {
             ),
         ];
       case AppMode.video:
-        // newBV's left rail, its exact item order: 搜索/个人/主页/分区/影视 —
         // each entry maps to its VideoSection index.
         const entries = <(int, String, IconData)>[
           (3, 'video_tab_search', Icons.search_rounded),
@@ -216,7 +199,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         return [
           for (final (railIndex, (sectionIndex, labelKey, icon)) in entries.indexed)
             Padding(
-              padding: EdgeInsets.only(bottom: 20.sp * textScale),
+              padding: EdgeInsets.only(bottom: 20.sp),
               child: _buildAdaptiveItem(
                 ref: ref,
                 item: AppMenuItem(index: railIndex, title: i18n(labelKey), shortTitle: i18n(labelKey), icon: icon),
@@ -342,7 +325,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final double textScale = TvTextScale.factorOf(context);
     // Expanded carries the small pill (icon + four-character name) with margin;
     // collapsed keeps the 64dp icon tile.
-    final sidebarWidth = (isExpanded ? 216.sp : 110.sp) * textScale;
+    final sidebarWidth = (isExpanded ? 216.ts(context) : 110.ts(context)) * textScale;
 
     // The top-left button switches the whole app between live / music / video.
     // Music and video own their own UI stacks; the live rail's destinations
@@ -390,7 +373,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 // from the menu column. The scrim keeps icons readable; the
                 // background bleeds through instead of a flat card block.
                 color: currentTvTheme.backgroundColor.withValues(alpha: 0.62),
-                padding: EdgeInsets.symmetric(vertical: 24.sp * textScale),
+                padding: EdgeInsets.symmetric(vertical: 24.ts(context)),
                 // The rail scrolls once its entries are taller than the panel: at
                 // 160% ten destinations no longer fit a 1080p screen (and on a
                 // 720p one they never did), and a clipped rail would hide both the
@@ -404,10 +387,11 @@ class _HomePageState extends ConsumerState<HomePage> {
                       // mode switch must be reachable no matter how far the
                       // section list has scrolled.
                       Padding(
-                        padding: EdgeInsets.only(bottom: 6.sp * textScale),
+                        padding: EdgeInsets.only(bottom: 6.sp),
                         child: TvDigitalClock(
                           format: isExpanded ? 'HH:mm:ss' : 'HH:mm',
-                          style: AppTextStyles.t20.copyWith(fontWeight: FontWeight.w600, 
+                          style: AppTextStyles.t20.copyWith(
+                            fontWeight: FontWeight.w600,
                             color: currentTvTheme.primaryTextColor,
                             height: 1,
                             letterSpacing: 1.5,
@@ -417,11 +401,15 @@ class _HomePageState extends ConsumerState<HomePage> {
                       if (isExpanded)
                         TvDigitalClock(
                           format: 'yyyy/MM/dd',
-                          style: AppTextStyles.t14.copyWith(fontWeight: FontWeight.w500, color: currentTvTheme.secondaryTextColor, height: 1),
+                          style: AppTextStyles.t14.copyWith(
+                            fontWeight: FontWeight.w500,
+                            color: currentTvTheme.secondaryTextColor,
+                            height: 1,
+                          ),
                         ),
-                      SizedBox(height: 15.sp * textScale),
+                      SizedBox(height: 15.ts(context)),
                       Padding(
-                        padding: EdgeInsets.only(bottom: 20.sp * textScale),
+                        padding: EdgeInsets.only(bottom: 20.sp),
                         child: _buildModeButton(appMode, isExpanded, textScale),
                       ),
                       // The active mode's own navigation — live destinations,
@@ -434,27 +422,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                         // item otherwise reads as a broken rail.
                         child: SingleChildScrollView(
                           child: Column(children: _buildModeRailItems(appMode, isExpanded, textScale)),
-                        ),
-                      ),
-                      Padding(
-                        padding: EdgeInsets.only(bottom: 20.sp * textScale),
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 10.sp * textScale),
-                          child: TvIconButton(
-                            icon: AnimatedRotation(
-                              turns: isExpanded ? 0.5 : 0.0,
-                              duration: const Duration(milliseconds: 250),
-                              curve: Curves.easeOutCubic,
-                              child: const Icon(Icons.arrow_forward_ios_rounded),
-                            ),
-                            // Expanded already spells every entry out; collapsed is
-                            // the state where the arrow needs a name.
-                            label: isExpanded ? null : i18n('menu_short_expand'),
-                            size: TvIconButtonSize.medium,
-                            isSecondary: true,
-                            expand: !isExpanded,
-                            onTap: () => ref.read(isMenuExpandedProvider.notifier).toggle(),
-                          ),
                         ),
                       ),
                       _buildAdaptiveItem(
@@ -477,10 +444,11 @@ class _HomePageState extends ConsumerState<HomePage> {
             Expanded(
               child: DpadRegion(
                 child: Padding(
-                  padding: EdgeInsets.all(8.sp),
+                  padding: EdgeInsets.all(8.ts(context)),
                   // Music and video own the whole pane (their own rail above,
-                  // login-gated content below); only live mode runs the
-                  // keep-alive home stack.
+                  // login-gated content below); live mode runs the keep-alive
+                  // home stack here, and the music/video sections run their
+                  // own keep-alive cache inside their section views.
                   child: !isLiveMode
                       ? Container(
                           key: ValueKey('mode_${appMode.name}'),
@@ -569,12 +537,12 @@ class _HomePageState extends ConsumerState<HomePage> {
     if (isExpanded) {
       return Container(
         width: double.infinity,
-        padding: EdgeInsets.symmetric(horizontal: 16.sp * textScale),
+        padding: EdgeInsets.symmetric(horizontal: 16.ts(context)),
         child: TvButton(
           title: item.title,
-          icon: Icon(item.icon, size: 36.sp * textScale),
+          icon: Icon(item.icon, size: 36.ts(context)),
           iconPosition: TvIconPosition.left,
-          size: TvButtonSize.small,
+          size: TvButtonSize.medium,
           isSecondary: !isSelected,
           selected: isSelected,
           useFadedFocus: true,
@@ -584,24 +552,22 @@ class _HomePageState extends ConsumerState<HomePage> {
       ).animate().fadeIn(duration: 150.ms).slideX(begin: -0.05, end: 0, duration: 200.ms, curve: Curves.easeOutCubic);
     }
 
-    // Full-width row, content centred — the settings menu's language. The old
-    // self-sized square read as squeezed under the focus fill next to the
-    // wider idle tiles; a row that spans the rail keeps every state the same
-    // footprint.
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 10.sp * textScale),
-      child: TvIconButton(
-        icon: Icon(item.icon),
-        // Collapsed rail: the icon alone left the destinations ambiguous, so each
-        // tile carries its two-character name underneath.
-        label: item.shortTitle.isEmpty ? item.title : item.shortTitle,
-        selected: isSelected,
-        size: TvIconButtonSize.medium,
-        useFadedFocus: true,
-        isSecondary: !isSelected,
-        expand: true,
-        focusNode: focusNode,
-        onTap: onTap,
+      padding: EdgeInsets.symmetric(horizontal: 10.ts(context)),
+      child: Center(
+        child: TvIconButton(
+          icon: Icon(item.icon),
+          // Collapsed rail: the icon alone left the destinations ambiguous, so each
+          // tile carries its two-character name underneath.
+          label: item.shortTitle.isEmpty ? item.title : item.shortTitle,
+          selected: isSelected,
+          size: TvIconButtonSize.medium,
+          useFadedFocus: true,
+          isSecondary: !isSelected,
+          expand: false,
+          focusNode: focusNode,
+          onTap: onTap,
+        ),
       ),
     );
   }

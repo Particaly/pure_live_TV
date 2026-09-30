@@ -44,13 +44,13 @@ class RendererSettingsSectionPage extends ConsumerWidget {
                 title: PlayerConsts.optionLabelFor(PlayerConsts.videoRenderersList, key, languageCode),
                 icon: key == currentKey ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
                 trailing: key == currentKey
-                    ? Icon(Icons.check_rounded, size: 26.sp, color: context.tvTheme.focusColor)
+                    ? Icon(Icons.check_rounded, size: 26.ts(context), color: context.tvTheme.focusColor)
                     : const SizedBox.shrink(),
                 onTap: () => player.updateSettings(playerState.copyWith(videoOutputDriver: key)),
               ),
           ],
         ),
-        SizedBox(height: 24.sp),
+        SizedBox(height: 24.ts(context)),
       ],
     );
   }

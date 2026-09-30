@@ -1,8 +1,8 @@
-import 'package:pure_live/app/router/app_routes.dart';
 import 'package:pure_live/exports/package_export.dart';
-import 'package:pure_live/services/app_update/app_update_service.dart';
-import 'package:pure_live/app/router/app_router.dart';
+import 'package:pure_live/app/router/app/app_routes.dart';
+import 'package:pure_live/app/router/app/app_router.dart';
 import 'package:pure_live/features/home/home_provider.dart';
+import 'package:pure_live/services/app_update/app_update_service.dart';
 
 /// One settings destination: its route, translation keys and icon.
 typedef SettingsEntry = ({String path, String titleKey, String? subtitleKey, IconData icon});
@@ -134,8 +134,12 @@ final List<SettingsGroup> settingsCatalog = <SettingsGroup>[
     titleKey: 'backup_manage',
     scope: 'all',
     entries: <SettingsEntry>[
-      (path: AppRoutes.kBackup, titleKey: 'backup_recover', subtitleKey: 'backup_recover_desc',
-       icon: Icons.settings_backup_restore_rounded),
+      (
+        path: AppRoutes.kBackup,
+        titleKey: 'backup_recover',
+        subtitleKey: 'backup_recover_desc',
+        icon: Icons.settings_backup_restore_rounded,
+      ),
     ],
   ),
   // The desktop app reaches about from its overflow menu; this app has no such
@@ -191,33 +195,33 @@ class SettingsCatalogView extends ConsumerWidget {
     };
 
     return ListView(
-      padding: EdgeInsets.symmetric(horizontal: 16.sp, vertical: 12.sp),
+      padding: EdgeInsets.symmetric(horizontal: 16.ts(context), vertical: 12.ts(context)),
       children: [
         for (final SettingsGroup group in settingsCatalog)
           if (group.scope == 'all' || group.scope == modeScope) ...[
-          TvSettingsGroupTitle(title: i18n(group.titleKey)),
-          TvSettingsCard(
-            children: [
-              for (final SettingsEntry entry in group.entries)
-                TvSettingsNavTile(
-                  title: i18n(entry.titleKey),
-                  subtitle: hasUpdate && entry.path == AppRoutes.kAbout
-                      ? '${i18n('new_version_found')} v${updateState.latestVersion}'
-                      : (entry.subtitleKey == null ? null : i18n(entry.subtitleKey!)),
-                  icon: entry.icon,
-                  trailing: hasUpdate && entry.path == AppRoutes.kAbout
-                      ? Text(
-                          i18n('new_version_found'),
-                          style: AppTextStyles.t16.copyWith(color: context.tvTheme.focusColor),
-                        )
-                      : null,
-                  onTap: () => settingsSectionRoutes[entry.path]?.push(context),
-                ),
-            ],
-          ),
-          SizedBox(height: 20.sp),
-        ],
-        SizedBox(height: 24.sp),
+            TvSettingsGroupTitle(title: i18n(group.titleKey)),
+            TvSettingsCard(
+              children: [
+                for (final SettingsEntry entry in group.entries)
+                  TvSettingsNavTile(
+                    title: i18n(entry.titleKey),
+                    subtitle: hasUpdate && entry.path == AppRoutes.kAbout
+                        ? '${i18n('new_version_found')} v${updateState.latestVersion}'
+                        : (entry.subtitleKey == null ? null : i18n(entry.subtitleKey!)),
+                    icon: entry.icon,
+                    trailing: hasUpdate && entry.path == AppRoutes.kAbout
+                        ? Text(
+                            i18n('new_version_found'),
+                            style: AppTextStyles.t16.copyWith(color: context.tvTheme.focusColor),
+                          )
+                        : null,
+                    onTap: () => settingsSectionRoutes[entry.path]?.push(context),
+                  ),
+              ],
+            ),
+            SizedBox(height: 20.ts(context)),
+          ],
+        SizedBox(height: 24.ts(context)),
       ],
     );
   }
@@ -317,10 +321,7 @@ class TvSettingsRoutePage extends StatelessWidget {
     // scroll away, and `TvAppBar` draws a back of its own — two back buttons under the
     // one `TvPageScaffold` also builds. Passing the title keeps `TvPageScaffold` in
     // charge of the bar and of the focus node that makes back selectable.
-    return TvPageScaffold(
-      title: i18n('settings_title'),
-      child: const SettingsCatalogView(),
-    );
+    return TvPageScaffold(title: i18n('settings_title'), child: const SettingsCatalogView());
   }
 }
 
@@ -343,7 +344,7 @@ class SettingsSectionScaffold extends StatelessWidget {
       // navigator. The shell contributes no chrome (see the route
       // table): a scaffold shared by every page never saw an inner push, so its back
       // button outlived the page it belonged to and stole the highlight.
-      child: SingleChildScrollView(padding: EdgeInsets.all(16.sp), child: child),
+      child: SingleChildScrollView(padding: EdgeInsets.all(16.ts(context)), child: child),
     );
   }
 }

@@ -1,20 +1,16 @@
-import 'package:dpad/dpad.dart';
-import 'package:flutter/material.dart';
-import 'package:pure_live/app/router/app_router.dart';
-import 'package:pure_live/exports/common_export.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pure_live/exports/exports.dart';
+import 'package:pure_live/modules/vod/models/models.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:pure_live/modules/video/widgets/video_card.dart';
-import 'package:pure_live/modules/media/api/bilibili_ugc_api.dart';
-import 'package:pure_live/modules/media/api/bilibili_music_api.dart';
-import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
-import 'package:pure_live/modules/media/widgets/music_video_card.dart';
-import 'package:pure_live/modules/media/models/models.dart';
-import 'package:pure_live/modules/media/controllers/music_player_controller.dart';
+import 'package:pure_live/modules/vod/api/bilibili_ugc_api.dart';
+import 'package:pure_live/modules/vod/api/bilibili_music_api.dart';
+import 'package:pure_live/modules/music/widgets/music_video_card.dart';
+import 'package:pure_live/modules/video/widgets/video_action_chip.dart';
+import 'package:pure_live/modules/vod/domain/providers/vod_providers.dart';
+import 'package:pure_live/modules/vod/controllers/music_player_controller.dart';
 
 /// One archive's page in video mode, newBV's detail screen restyled for the
 /// TV grid: a poster with the gradient scrim and cover badges, the avatar-led
-/// UP row, the interaction chips and the part (分P) list, all in the shared
 /// focused-card palette. The UP row opens the user-space page.
 class VideoDetailPage extends ConsumerStatefulWidget {
   const VideoDetailPage({super.key, required this.archive});
@@ -26,11 +22,6 @@ class VideoDetailPage extends ConsumerStatefulWidget {
 }
 
 class _VideoDetailPageState extends ConsumerState<VideoDetailPage> {
-  /// The related-videos row's region, so the header button can drop the focus
-  /// straight onto its first card — walking down through every part row to
-  /// reach the row was the whole complaint.
-  final GlobalKey<DpadRegionState> _relatedRegionKey = GlobalKey<DpadRegionState>();
-
   MusicArchive? _detail;
   List<MusicArchive> _related = [];
   String? _error;
@@ -55,7 +46,10 @@ class _VideoDetailPageState extends ConsumerState<VideoDetailPage> {
       setState(() => _error = e.toString());
     }
     try {
-      final related = await BilibiliMusicApi.instance.getRelatedVideos(aid: widget.archive.aid);
+      final related = await BilibiliMusicApi.instance.getRelatedVideos(
+        aid: widget.archive.aid,
+        bvid: widget.archive.bvid,
+      );
       if (!mounted) return;
       setState(() => _related = related);
     } catch (_) {
@@ -94,6 +88,24 @@ class _VideoDetailPageState extends ConsumerState<VideoDetailPage> {
     }
   }
 
+  /// Flips the favoured state against the user's own default folder: the
+  /// fav-deal API only changes what the id lists name, so favouriting has to
+  /// unfavouriting has to name the same one for removal.
+  Future<void> _toggleFavoured() async {
+    final folders = await ref.read(ugcRepositoryProvider).getMyFavFolders();
+    if (folders.isEmpty) throw Exception('no fav folder');
+    final int folderId = folders.first.id;
+    final int aid = (_detail ?? widget.archive).aid;
+    await ref
+        .read(ugcRepositoryProvider)
+        .favDeal(
+          aid: aid,
+          addFolderIds: _favoured ? const [] : [folderId],
+          delFolderIds: _favoured ? [folderId] : const [],
+        );
+    await _loadStates(aid);
+  }
+
   void _play(List<MusicTrack> tracks, int startIndex) {
     // Video mode keeps the picture on.
     ref.read(musicPlayerControllerProvider.notifier).playQueue(tracks, startIndex: startIndex, audioOnly: false);
@@ -108,14 +120,15 @@ class _VideoDetailPageState extends ConsumerState<VideoDetailPage> {
     final tracks = archive.tracks;
     // Vertical rhythm follows the app font setting: fixed .sp heights clipped
     // their labels the moment the user enlarged the font.
-    final double textScale = TvTextScale.factorOf(context);
 
     return TvPageScaffold(
       title: i18n('video_detail_title'),
       child: _error != null && _detail == null
-          ? Center(child: AppStatusView(type: AppStatusType.error, title: i18n('load_failed'), subtitle: _error))
+          ? Center(
+              child: AppStatusView(type: AppStatusType.error, title: i18n('load_failed'), subtitle: _error),
+            )
           : SingleChildScrollView(
-              padding: EdgeInsets.all(24.sp),
+              padding: EdgeInsets.all(24.ts(context)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -126,31 +139,20 @@ class _VideoDetailPageState extends ConsumerState<VideoDetailPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SizedBox(
-                        width: 400.sp,
+                        width: 400.ts(context),
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(24.sp),
+                          borderRadius: BorderRadius.circular(24.ts(context)),
                           child: Stack(
                             children: [
                               AspectRatio(
-                                aspectRatio: 16 / 10,
+                                aspectRatio: 16 / 9,
                                 child: CachedNetworkImage(
                                   imageUrl: archive.cover,
                                   fit: BoxFit.cover,
                                   memCacheWidth: 900,
                                 ),
                               ),
-                              Positioned.fill(
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      stops: const [0.35, 1.0],
-                                      colors: [Colors.transparent, Colors.black.withValues(alpha: 0.82)],
-                                    ),
-                                  ),
-                                ),
-                              ),
+
                               if (archive.tname.isNotEmpty)
                                 Positioned(
                                   left: 14.sp,
@@ -171,23 +173,30 @@ class _VideoDetailPageState extends ConsumerState<VideoDetailPage> {
                           ),
                         ),
                       ),
-                      SizedBox(width: 32.sp),
+                      SizedBox(width: 32.ts(context)),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               archive.title,
-                              style: AppTextStyles.t24.copyWith(fontWeight: FontWeight.w700, color: tvTheme.primaryTextColor, height: 1.35),
+                              style: AppTextStyles.t24.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: tvTheme.primaryTextColor,
+                                height: 1.35,
+                              ),
                             ),
-                            SizedBox(height: 10.sp),
+                            SizedBox(height: 10.ts(context)),
                             Text(
                               '${i18n('video_action_played')} ${readableCount(archive.playCount.toString())}'
                               ' · ${i18n('video_danmaku_stat', args: {'count': readableCount(archive.barrageCount.toString())})}'
                               ' · ${archive.publishDate}',
-                              style: AppTextStyles.t14.copyWith(fontWeight: FontWeight.w500, color: tvTheme.secondaryTextColor),
+                              style: AppTextStyles.t14.copyWith(
+                                fontWeight: FontWeight.w500,
+                                color: tvTheme.secondaryTextColor,
+                              ),
                             ),
-                            SizedBox(height: 16.sp),
+                            SizedBox(height: 16.ts(context)),
                             // The UP row: avatar-led, opens the user space.
                             TvFocusable(
                               onTap: archive.upMid > 0
@@ -195,88 +204,87 @@ class _VideoDetailPageState extends ConsumerState<VideoDetailPage> {
                                   : null,
                               builder: (context, focused, child) => AnimatedContainer(
                                 duration: const Duration(milliseconds: 120),
-                                padding: EdgeInsets.all(12.sp),
+                                padding: EdgeInsets.all(12.ts(context)),
                                 decoration: BoxDecoration(
                                   color: focused ? tvTheme.focusedCardColor : tvTheme.cardColor,
-                                  borderRadius: BorderRadius.circular(20.sp),
-                                  border: Border.all(color: focused ? accent : Colors.transparent, width: 2.sp),
+                                  borderRadius: BorderRadius.circular(20.ts(context)),
+                                  border: Border.all(
+                                    color: focused ? accent : Colors.transparent,
+                                    width: 2.ts(context),
+                                  ),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     TvCommonAvatar(avatarUrl: archive.upFace, fallbackName: archive.upName),
-                                    SizedBox(width: 12.sp),
+                                    SizedBox(width: 12.ts(context)),
                                     Flexible(
                                       child: Text(
                                         archive.upName,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: AppTextStyles.t16.copyWith(fontWeight: FontWeight.w700, 
+                                        style: AppTextStyles.t16.copyWith(
+                                          fontWeight: FontWeight.w700,
                                           color: focused ? tvTheme.onFocusedCard : tvTheme.primaryTextColor,
                                         ),
                                       ),
                                     ),
-                                    Icon(Icons.chevron_right_rounded, size: 24.sp, color: tvTheme.secondaryTextColor),
+                                    Icon(
+                                      Icons.chevron_right_rounded,
+                                      size: 24.ts(context),
+                                      color: tvTheme.secondaryTextColor,
+                                    ),
                                   ],
                                 ),
                               ),
                             ),
-                            SizedBox(height: 16.sp),
+                            SizedBox(height: 16.ts(context)),
                             // Interaction chips.
                             Wrap(
-                              spacing: 10.sp,
-                              runSpacing: 10.sp,
+                              spacing: 10.ts(context),
+                              runSpacing: 10.ts(context),
                               children: [
-                                _ActionChip(
+                                VideoActionChip(
                                   icon: _liked ? Icons.thumb_up_alt_rounded : Icons.thumb_up_alt_outlined,
                                   label: i18n('video_action_like'),
                                   active: _liked,
-                                  onTap: () => _runAction(
-                                    () async {
-                                      await BilibiliUgcApi.instance.setLike(archive.aid, like: !_liked);
-                                      setState(() => _liked = !_liked);
-                                    },
-                                    'video_action_liked',
-                                  ),
-                                  // Long-press: the one-touch triple, like newBV's
-                                  // shortcut — like, coin and favourite together.
-                                  onLongPress: () => _runAction(
-                                    () async {
-                                      await BilibiliUgcApi.instance.tripleAction(archive.aid);
-                                      await _loadStates(archive.aid);
-                                    },
-                                    'video_action_trpled',
-                                  ),
+                                  onTap: () => _runAction(() async {
+                                    await ref.read(ugcRepositoryProvider).setLike(archive.aid, like: !_liked);
+                                    setState(() => _liked = !_liked);
+                                  }, 'video_action_liked'),
+                                  // No long-press shortcut here on purpose: a
+                                  // focusable with a long-select loses its mouse
+                                  // tap (the d-pad layer holds the tap to
+                                  // disambiguate the hold), and on the emulator
+                                  // has its own chip.
                                 ),
-                                _ActionChip(
+                                VideoActionChip(
                                   icon: Icons.toll_rounded,
                                   label: i18n('video_action_coin'),
                                   onTap: () => _runAction(
-                                    () => BilibiliUgcApi.instance.addCoin(archive.aid),
+                                    () => ref.read(ugcRepositoryProvider).addCoin(archive.aid),
                                     'video_action_coined',
                                   ),
                                 ),
-                                _ActionChip(
+                                VideoActionChip(
                                   icon: _favoured ? Icons.star_rounded : Icons.star_outline_rounded,
                                   label: i18n('video_action_fav'),
                                   active: _favoured,
-                                  onTap: () => _runAction(
-                                    () async {
-                                      await BilibiliUgcApi.instance.favDeal(aid: archive.aid, addFolderIds: const []);
-                                      await _loadStates(archive.aid);
-                                    },
-                                    'video_action_faved',
-                                  ),
+                                  // Favouriting needs a real target folder: an
+                                  // empty add-folder list is the API's "change
+                                  // nothing", so the old call succeeded and
+                                  // stored nothing.
+                                  onTap: () => _runAction(_toggleFavoured, 'video_action_faved'),
                                 ),
-                                _ActionChip(
+                                VideoActionChip(
                                   icon: Icons.recommend_rounded,
                                   label: i18n('video_action_triple'),
                                   onTap: () => _runAction(
-                                    () => BilibiliUgcApi.instance.tripleAction(archive.aid),
+                                    () => ref.read(ugcRepositoryProvider).tripleAction(archive.aid),
                                     'video_action_trpled',
                                   ),
                                 ),
-                                _ActionChip(
+                                VideoActionChip(
                                   icon: Icons.watch_later_outlined,
                                   label: i18n('video_action_toview'),
                                   onTap: () => _runAction(
@@ -284,13 +292,13 @@ class _VideoDetailPageState extends ConsumerState<VideoDetailPage> {
                                     'video_action_toviewed',
                                   ),
                                 ),
-                                _ActionChip(
+                                VideoActionChip(
                                   icon: Icons.comment_outlined,
                                   label: i18n('video_comments_title'),
                                   onTap: archive.aid > 0
                                       ? () => UgcCommentsRoute(
-                                            UgcCommentsArgs(oid: archive.aid, title: archive.title),
-                                          ).push(context)
+                                          UgcCommentsArgs(oid: archive.aid, title: archive.title),
+                                        ).push(context)
                                       : null,
                                 ),
                               ],
@@ -301,26 +309,27 @@ class _VideoDetailPageState extends ConsumerState<VideoDetailPage> {
                     ],
                   ),
                   if (archive.description.isNotEmpty) ...[
-                    SizedBox(height: 20.sp),
+                    SizedBox(height: 20.ts(context)),
                     // The description in its own card, like the reference's
                     // grey block under the header.
                     Container(
                       width: double.infinity,
-                      padding: EdgeInsets.all(18.sp),
+                      padding: EdgeInsets.all(18.ts(context)),
                       decoration: BoxDecoration(
                         color: tvTheme.cardColor,
-                        borderRadius: BorderRadius.circular(16.sp),
+                        borderRadius: BorderRadius.circular(16.ts(context)),
                       ),
                       child: Text(
                         archive.description,
-                        style: AppTextStyles.t14.copyWith(fontWeight: FontWeight.w500, 
+                        style: AppTextStyles.t14.copyWith(
+                          fontWeight: FontWeight.w500,
                           color: tvTheme.secondaryTextColor,
                           height: 1.55,
                         ),
                       ),
                     ),
                   ],
-                  SizedBox(height: 24.sp),
+                  SizedBox(height: 24.ts(context)),
                   // ==================================================== parts
                   Padding(
                     padding: EdgeInsets.only(left: 8.sp, bottom: 12.sp),
@@ -330,35 +339,36 @@ class _VideoDetailPageState extends ConsumerState<VideoDetailPage> {
                           '${i18n('music_tracks_title')}（${tracks.length}）',
                           style: AppTextStyles.t20.copyWith(fontWeight: FontWeight.w600, color: accent),
                         ),
-                        const Spacer(),
+                        SizedBox(width: 16.ts(context)),
+                        // Next to the title, not parked at the row's far end:
+                        // pressing Down from the button then lands on the
+                        // first part instead of hunting across a full-width
+                        // row.
                         TvButton(
                           title: i18n('music_play_all'),
-                          icon: Icon(Icons.play_circle_fill_rounded, size: 28.sp),
+                          icon: Icon(Icons.play_circle_fill_rounded, size: 28.ts(context)),
                           size: TvButtonSize.mini,
                           onTap: () => _play(tracks, 0),
                         ),
                       ],
                     ),
                   ),
-                  DpadRegion(
-                    verticalEdge: DpadEdgeBehavior.leave,
-                    horizontalEdge: DpadEdgeBehavior.leave,
-                    child: Column(
-                      children: [
-                        for (final (index, track) in tracks.indexed)
-                          Padding(
-                            padding: EdgeInsets.only(bottom: 8.sp),
-                            child: _PartTile(
-                              track: track,
-                              index: index,
-                              onTap: () => _play(tracks, index),
-                            ),
-                          ),
-                      ],
-                    ),
+                  // Plain focusables, no wrapping region: the favour detail
+                  // page and the player panels prove bare rows in a scroll
+                  // view are reachable by the remote, while this page's region
+                  // wrapper (a traversal-group boundary) was exactly what the
+                  // Down key could not cross.
+                  Column(
+                    children: [
+                      for (final (index, track) in tracks.indexed)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: 8.sp),
+                          child: _PartTile(track: track, index: index, onTap: () => _play(tracks, index)),
+                        ),
+                    ],
                   ),
                   if (_related.isNotEmpty) ...[
-                    SizedBox(height: 16.sp),
+                    SizedBox(height: 16.ts(context)),
                     Padding(
                       padding: EdgeInsets.only(left: 8.sp, bottom: 10.sp),
                       child: Text(
@@ -366,91 +376,33 @@ class _VideoDetailPageState extends ConsumerState<VideoDetailPage> {
                         style: AppTextStyles.t20.copyWith(fontWeight: FontWeight.w600, color: accent),
                       ),
                     ),
-                    DpadRegion(
-                      key: _relatedRegionKey,
-                      horizontalEdge: DpadEdgeBehavior.leave,
-                      verticalEdge: DpadEdgeBehavior.leave,
-                      enter: DpadEnterBehavior.nearest,
-                      // A shrinkWrap horizontal viewport has an unbounded cross
-                      // axis inside the page's vertical scroller and crashes
-                      // layout — pin the row's height, scaled with the font so
-                      // an enlarged setting still fits the two text lines under
-                      // the cover.
-                      child: SizedBox(
-                        height: 300.sp * 9 / 16 + 108.sp * textScale,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          padding: EdgeInsets.only(bottom: 16.sp),
-                          itemCount: _related.length,
-                          separatorBuilder: (_, _) => SizedBox(width: 12.sp),
-                          itemBuilder: (context, index) {
-                            final related = _related[index];
-                            return SizedBox(
-                              width: 300.sp,
-                              child: VideoCard(
-                                archive: related,
-                                onTap: () => VideoDetailRoute(related).push(context),
-                              ),
-                            );
-                          },
-                        ),
+                    // Bare focusables, no DpadRegion wrapper: the region is a
+                    // traversal-group boundary, and the Down key from the last
+                    // part row could not enter it at all (while Right sneaked
+                    // in at some far card — the wrong-row complaint). The
+                    // favour detail page proved bare rows in a scroll view are
+                    // reachable, so the cards sit directly in the tree and
+                    // Down lands on the first one.
+                    SizedBox(
+                      height: 300.ts(context) * 9 / 16 + 108.ts(context),
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.only(bottom: 16.sp),
+                        itemCount: _related.length,
+                        separatorBuilder: (_, _) => SizedBox(width: 12.ts(context)),
+                        itemBuilder: (context, index) {
+                          final related = _related[index];
+                          return SizedBox(
+                            width: 300.ts(context),
+                            child: VideoCard(archive: related, onTap: () => VideoDetailRoute(related).push(context)),
+                          );
+                        },
                       ),
                     ),
                   ],
                 ],
               ),
             ),
-    );
-  }
-}
-
-/// One interaction chip: a compact icon+label pill in the focused palette.
-class _ActionChip extends StatelessWidget {
-  const _ActionChip({required this.icon, required this.label, this.active = false, this.onTap, this.onLongPress});
-
-  final IconData icon;
-  final String label;
-  final bool active;
-  final VoidCallback? onTap;
-
-  /// The long-press shortcut, newBV's one-touch triple (like + coin + favourite)
-  /// on the like chip.
-  final VoidCallback? onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    final tvTheme = context.tvTheme;
-    final accent = tvTheme.focusColor;
-
-    return TvFocusable(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      builder: (context, focused, child) => AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        padding: EdgeInsets.symmetric(horizontal: 16.sp, vertical: 10.sp),
-        decoration: BoxDecoration(
-          color: active
-              ? accent.withValues(alpha: 0.2)
-              : focused
-                  ? tvTheme.focusedCardColor
-                  : tvTheme.cardColor,
-          borderRadius: BorderRadius.circular(24.sp),
-          border: Border.all(color: focused ? accent : Colors.transparent, width: 2.sp),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 22.sp, color: active ? accent : tvTheme.secondaryTextColor),
-            SizedBox(width: 8.sp),
-            Text(
-              label,
-              style: AppTextStyles.t14.copyWith(fontWeight: FontWeight.w600, 
-                color: active ? accent : (focused ? tvTheme.onFocusedCard : tvTheme.primaryTextColor),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -462,11 +414,19 @@ class _PartTile extends StatelessWidget {
   final int index;
   final VoidCallback onTap;
 
+  /// the moment the source skips a number. Leading digits count as an ordinal
+  /// only when a separator follows — "24K Magic" keeps its digits.
+  static final RegExp _leadingIndex = RegExp(r'^\d{1,4}\s*[.、，,\-–—_:：)·．]\s*');
+
+  static String _displayTitle(String raw) {
+    final String stripped = raw.replaceFirst(_leadingIndex, '');
+    return stripped.trim().isEmpty ? raw : stripped;
+  }
+
   @override
   Widget build(BuildContext context) {
     final tvTheme = context.tvTheme;
     final accent = tvTheme.focusColor;
-    final double textScale = TvTextScale.factorOf(context);
 
     return TvFocusable(
       onTap: onTap,
@@ -474,38 +434,41 @@ class _PartTile extends StatelessWidget {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 120),
           curve: Curves.easeOutCubic,
-          height: 76.sp * textScale,
-          padding: EdgeInsets.symmetric(horizontal: 16.sp),
+          height: 76.ts(context),
+          padding: EdgeInsets.symmetric(horizontal: 16.ts(context)),
           decoration: BoxDecoration(
             color: focused ? tvTheme.focusedCardColor : tvTheme.cardColor,
-            borderRadius: BorderRadius.circular(18.sp),
-            border: Border.all(color: focused ? accent : Colors.transparent, width: 2.sp),
+            borderRadius: BorderRadius.circular(18.ts(context)),
+            border: Border.all(color: focused ? accent : Colors.transparent, width: 2.ts(context)),
           ),
           child: Row(
             children: [
               SizedBox(
-                width: 40.sp,
+                width: 40.ts(context),
                 child: Text(
                   '${index + 1}',
-                  style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, 
+                  style: AppTextStyles.t18.copyWith(
+                    fontWeight: FontWeight.w500,
                     color: focused ? tvTheme.onFocusedCardSecondary : tvTheme.secondaryTextColor,
                   ),
                 ),
               ),
               Expanded(
                 child: Text(
-                  track.title,
+                  _displayTitle(track.title),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, 
+                  style: AppTextStyles.t18.copyWith(
+                    fontWeight: FontWeight.w500,
                     color: focused ? tvTheme.onFocusedCard : tvTheme.primaryTextColor,
                   ),
                 ),
               ),
-              SizedBox(width: 12.sp),
+              SizedBox(width: 12.ts(context)),
               Text(
                 MusicVideoCard.formatDuration(track.part.duration > 0 ? track.part.duration : track.archive.duration),
-                style: AppTextStyles.t16.copyWith(fontWeight: FontWeight.w500, 
+                style: AppTextStyles.t16.copyWith(
+                  fontWeight: FontWeight.w500,
                   color: focused ? tvTheme.onFocusedCardSecondary : tvTheme.secondaryTextColor,
                 ),
               ),

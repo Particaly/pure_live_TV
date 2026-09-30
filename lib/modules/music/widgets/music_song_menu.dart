@@ -1,28 +1,20 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
-
 import 'package:pure_live/exports/common_export.dart';
-import 'package:pure_live/modules/media/controllers/music_player_controller.dart';
-import 'package:pure_live/modules/media/models/models.dart';
-import 'package:pure_live/modules/music/controllers/library/music_library_controller.dart';
-import 'package:pure_live/modules/music/pages/playlist/music_playlist_dialogs.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pure_live/modules/vod/models/models.dart';
 import 'package:pure_live/modules/music/services/music_lyric_service.dart';
+import 'package:pure_live/modules/vod/controllers/music_player_controller.dart';
+import 'package:pure_live/modules/music/pages/playlist/music_playlist_dialogs.dart';
+import 'package:pure_live/modules/music/controllers/library/music_library_controller.dart';
 
 /// How the calling list removes this song — every list deletes differently
-/// (最近播放 drops the record, 喜欢 unhooks the heart, a playlist unplugs the
 /// entry), while everything else in the menu is shared.
-enum MusicSongMenuRemove {
-  recent,
-  liked,
-  playlist,
-  none,
-}
+enum MusicSongMenuRemove { recent, liked, playlist, none }
 
-/// The unified song long-press menu, the QQ-music set: 下一首播放, 喜欢,
-/// 加入歌单, plus the caller's own rows (置顶 / 清除默认歌词 / 删除).
+///
+/// one) only makes sense for a song that is NOT the one playing now, so it
+/// whose list owns its own removal (the playing queue drops the entry).
 Future<void> showMusicSongMenu(
   BuildContext context,
   WidgetRef ref, {
@@ -32,35 +24,39 @@ Future<void> showMusicSongMenu(
   int? playlistIndex,
   Future<void> Function()? onPin,
   String? removeLabelKey,
+  Future<void> Function()? onDelete,
 }) async {
   final controller = ref.read(musicPlayerControllerProvider.notifier);
   final libraryController = ref.read(musicLibraryControllerProvider.notifier);
   final isLiked = ref.read(musicLibraryControllerProvider).isSongLiked(track.id);
   final hasDefaultLyric = MusicLyricService.instance.manualLyric(track.title) != null;
+  final isCurrent = ref.read(musicPlayerControllerProvider).current?.id == track.id;
 
   await TvDialogUtils.show<void>(
     context: context,
     builder: (_) => TvDialog(
       title: track.title,
       cancelText: i18n('cancel'),
-      width: 560.sp,
+      width: 560.ts(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _menuTile(
-            context,
-            Icons.low_priority_rounded,
-            i18n('music_play_next'),
-            autofocus: true,
-            onTap: () {
-              Navigator.of(context).pop();
-              unawaited(controller.playNext(track));
-            },
-          ),
+          if (!isCurrent)
+            _menuTile(
+              context,
+              Icons.low_priority_rounded,
+              i18n('music_play_next'),
+              autofocus: true,
+              onTap: () {
+                Navigator.of(context).pop();
+                unawaited(controller.playNext(track));
+              },
+            ),
           _menuTile(
             context,
             isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
             i18n(isLiked ? 'music_song_unliked_menu' : 'music_song_like_menu'),
+            autofocus: isCurrent,
             onTap: () {
               Navigator.of(context).pop();
               libraryController.toggleLikeSong(track);
@@ -71,6 +67,7 @@ Future<void> showMusicSongMenu(
             Icons.playlist_add_rounded,
             i18n('music_add_to_playlist'),
             onTap: () {
+              // Closes this menu first — the picker opens over the page.
               Navigator.of(context).pop();
               showAddToPlaylistDialog(context, ref, track);
             },
@@ -95,6 +92,17 @@ Future<void> showMusicSongMenu(
                 Navigator.of(context).pop();
                 MusicLyricService.instance.clearManualLyric(track.title);
                 ToastUtil.show(i18n('music_lyric_cleared'));
+              },
+            ),
+          if (onDelete != null)
+            _menuTile(
+              context,
+              Icons.delete_outline_rounded,
+              i18n('music_removed_from_queue'),
+              destructive: true,
+              onTap: () {
+                Navigator.of(context).pop();
+                unawaited(onDelete());
               },
             ),
           if (remove != MusicSongMenuRemove.none)
@@ -137,7 +145,7 @@ Widget _menuTile(
   final color = destructive ? Colors.redAccent : context.tvTheme.focusColor;
   return TvDialogOptionTile(
     title: label,
-    icon: Icon(icon, size: 26.sp, color: color),
+    icon: Icon(icon, size: 26.ts(context), color: color),
     showCheck: false,
     autofocus: autofocus,
     onTap: onTap,

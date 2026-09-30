@@ -1,10 +1,10 @@
 import 'app_settings_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pure_live/platforms/sites.dart';
-import 'package:pure_live/shared/consts/app_consts.dart';
-import 'package:pure_live/shared/models/live_room/live_room.dart';
-import 'package:pure_live/shared/utils/hive_pref_util.dart';
-import 'package:pure_live/shared/utils/list_reorder.dart';
+import 'package:pure_live/core/consts/app_consts.dart';
+import 'package:pure_live/core/models/live_room/live_room.dart';
+import 'package:pure_live/core/utils/hive_pref_util.dart';
+import 'package:pure_live/core/utils/list_reorder.dart';
 import 'package:pure_live/services/settings/settings.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -50,6 +50,7 @@ class AppSettingsController extends _$AppSettingsController {
       enableMultiView: HivePrefUtil.getBool('enableMultiView') ?? true,
       enableNewWindowPlay: HivePrefUtil.getBool('enableNewWindowPlay') ?? true,
       savedMenuIds: HivePrefUtil.getStringList('savedMenuIds') ?? [],
+      sidebarExpanded: HivePrefUtil.getBool('sidebarExpanded') ?? false,
     );
   }
 
@@ -166,6 +167,7 @@ class AppSettingsController extends _$AppSettingsController {
     HivePrefUtil.setBool('enableFullScreenDefault', state.enableFullScreenDefault);
     HivePrefUtil.setBool('showSplashPage', state.showSplashPage);
     HivePrefUtil.setStringList('savedMenuIds', state.savedMenuIds);
+    HivePrefUtil.setBool('sidebarExpanded', state.sidebarExpanded);
     HivePrefUtil.setBool('enableAsmrSleepMode', state.enableAsmrSleepMode);
     HivePrefUtil.setInt('asmrSleepMinutes', state.asmrSleepMinutes);
     HivePrefUtil.setBool('useGitHubOriginForUpdates', state.useGitHubOriginForUpdates);

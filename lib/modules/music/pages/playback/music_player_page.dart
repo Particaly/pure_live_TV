@@ -1,29 +1,27 @@
 import 'dart:async';
 import 'package:dpad/dpad.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:pure_live/exports/exports.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import 'package:pure_live/exports/common_export.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pure_live/modules/media/api/bilibili_music_api.dart';
-import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
-import 'package:pure_live/modules/media/widgets/handle_video_surface.dart';
+import 'package:pure_live/modules/vod/api/bilibili_music_api.dart';
+import 'package:pure_live/modules/vod/widgets/handle_video_surface.dart';
 import 'package:pure_live/modules/music/services/music_lyric_service.dart';
-import 'package:pure_live/modules/media/controllers/music_player_controller.dart';
+import 'package:pure_live/modules/vod/controllers/music_player_controller.dart';
 import 'package:pure_live/modules/music/pages/playback/widgets/player_widgets.dart';
-import 'package:pure_live/modules/music/controllers/library/music_library_controller.dart';
-
 
 /// The full-screen music player.
 ///
 /// Remote model — one key handler owns the page and steers an index, the way the
 /// live player does, so there is no per-button focus ring to hunt for:
-/// - controls hidden: OK brings them back, left/right seek ±10s;
+/// - controls hidden: OK brings them back, left/right seek with newBV's press
+///   acceleration (a long press streams repeats through the same call and
+///   walks the step up to 60s), up/down previous/next;
 /// - bar up: left/right walk its buttons with wrap, OK activates the highlighted
-///   one, down drops into the seek bar (left/right seek there), up opens the
-///   queue, Back peels one layer out (queue → controls → page);
-/// - video mode without a key press for five seconds slides the bar away — the
-///   lyrics and poster views keep it, because nothing there is being watched.
+///   one, down drops into the seek bar (left/right seek there), Back peels one
+///   layer out (queue → controls → page). The playlist opens from its bar
+///   button only; no key shortcut raises it.
+/// - without a key for five seconds the bar slides away in every view —
+///   video, lyrics and poster alike (live_play's overlay model): the bar
+///   starts hidden, OK raises it, and every key re-arms the countdown.
 ///
 /// Leaving the page does not stop the music — the queue keeps playing while the
 /// viewer browses, which is the whole point of a music mode on a TV.
@@ -36,13 +34,12 @@ class MusicPlayerPage extends ConsumerStatefulWidget {
 
 class _MusicPlayerPageState extends ConsumerState<MusicPlayerPage> {
   final FocusNode _rootNode = FocusNode(debugLabel: 'music/page');
-  bool _controlsVisible = true;
+
+  /// live_play's entry: the bar starts hidden — OK raises it, and it hides
+  /// itself five seconds after the last key, in every view.
+  bool _controlsVisible = false;
   bool _queueOpen = false;
   bool _settingsOpen = false;
-
-  /// The live_play follow gesture: a second Left press inside the window is
-  /// the follow toggle, so a single stray Left costs nothing.
-  DateTime _lastLeftPress = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Whether the next bar activation should land in the seek zone — the
   /// hidden-state arrow seeks raise the bar with the keyboard already there.
@@ -58,12 +55,28 @@ class _MusicPlayerPageState extends ConsumerState<MusicPlayerPage> {
     super.initState();
     WakelockPlus.enable().catchError((Object _) {});
     _armAutoHide();
+    // A previous visit that left with the picture on lost its texture: mpv
+    // keeps decoding into the output it lost track of, so re-entering shows
+    // black until the output is rebuilt. One vid cycle re-attaches it (the
+    final player = ref.read(musicPlayerControllerProvider.notifier);
+    if (!ref.read(musicPlayerControllerProvider).audioOnly && player.videoSurfaceNeedsReattach) {
+      player.videoSurfaceNeedsReattach = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(player.reattachVideoSurface());
+      });
+    }
   }
 
   @override
   void dispose() {
     WakelockPlus.disable().catchError((Object _) {});
     _autoHideTimer?.cancel();
+    // Leaving with the picture on: the texture dies with this page while the
+    // resident session keeps playing — flag the re-attach for the next mount.
+    final player = ref.read(musicPlayerControllerProvider.notifier);
+    if (!ref.read(musicPlayerControllerProvider).audioOnly && player.handle != null) {
+      player.videoSurfaceNeedsReattach = true;
+    }
     _rootNode.dispose();
     super.dispose();
   }
@@ -113,12 +126,8 @@ class _MusicPlayerPageState extends ConsumerState<MusicPlayerPage> {
     if (_queueOpen) return KeyEventResult.ignored;
 
     if (_controlsVisible) {
-      // The bar owns left/right/OK/down; up is the page's, and it opens the
-      // queue — the layer above the bar, mirroring the live player.
-      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        _openQueue();
-        return KeyEventResult.handled;
-      }
+      // The bar owns left/right/OK/down. Up is left unhandled so the bar's own
+      // rows can take it; the playlist itself opens from its bar button only.
       if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
         _hideControls();
         return KeyEventResult.handled;
@@ -126,29 +135,37 @@ class _MusicPlayerPageState extends ConsumerState<MusicPlayerPage> {
       return KeyEventResult.ignored;
     }
 
-    // Controls hidden: live_play's model — Right opens the playlist, a
-    // double-pressed Left follows the album, Up/Down walk the queue, OK
-    // raises the bar (whose seek zone owns the ±10s).
+    // Media keys work in every layer, like the video player's handling.
+    if (event.logicalKey == LogicalKeyboardKey.mediaPlayPause ||
+        event.logicalKey == LogicalKeyboardKey.mediaPlay ||
+        event.logicalKey == LogicalKeyboardKey.mediaPause) {
+      ref.read(musicPlayerControllerProvider.notifier).togglePlayPause();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.mediaTrackNext) {
+      ref.read(musicPlayerControllerProvider.notifier).next();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.mediaTrackPrevious) {
+      ref.read(musicPlayerControllerProvider.notifier).previous();
+      return KeyEventResult.handled;
+    }
+
+    // Controls hidden: live_play's model — OK raises the bar, Up/Down walk the
+    // queue, and Left/Right seek with newBV's press acceleration. Holding the
+    // key streams KeyRepeatEvents through the same call, so a long press walks
+    // the step up to 60s without the bar ever getting in the way.
     final controller = ref.read(musicPlayerControllerProvider.notifier);
-    if (event.logicalKey == LogicalKeyboardKey.select ||
-        event.logicalKey == LogicalKeyboardKey.enter) {
+    if (event.logicalKey == LogicalKeyboardKey.select || event.logicalKey == LogicalKeyboardKey.enter) {
       _showControls();
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      _openQueue();
+      controller.seekAccelerated(1);
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-      final now = DateTime.now();
-      final isDouble = now.difference(_lastLeftPress) < const Duration(milliseconds: 350);
-      _lastLeftPress = now;
-      if (isDouble) {
-        final track = ref.read(musicPlayerControllerProvider).current;
-        if (track != null) {
-          ref.read(musicLibraryControllerProvider.notifier).toggleFavorite(track.archive);
-        }
-      }
+      controller.seekAccelerated(-1);
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
@@ -226,8 +243,8 @@ class _MusicPlayerPageState extends ConsumerState<MusicPlayerPage> {
     final tvTheme = context.tvTheme;
     final track = state.current;
 
-    // The picture and the lyrics views hide the bar on different clocks: going
-    // to video mode starts the countdown, coming back to the lyrics cancels it.
+    // Switching between the picture and the lyrics view is a key-driven mode
+    // change too: it re-arms the same 5s countdown every key uses.
     ref.listen(musicPlayerControllerProvider.select((s) => s.audioOnly), (_, _) => _armAutoHide());
 
     // The remote's Back walks the system pop channel, not the key-event one:
@@ -247,134 +264,131 @@ class _MusicPlayerPageState extends ConsumerState<MusicPlayerPage> {
         }
       },
       child: TvScaffold(
-      openingFocus: _rootNode,
-      child: ColoredBox(
-        color: Colors.black,
-        child: DpadRegion(
-        memoryKey: 'music_player',
-        child: Focus(
-          focusNode: _rootNode,
-          onKeyEvent: _onRootKey,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // ---------------------------------------------------- the picture
-              // Video keeps the picture; audio-only becomes the now-playing view:
-              // the cover alone in the middle, and the synced lyrics beside it
-              // once they arrive.
-              if (controller.handle != null && !state.audioOnly)
-                HandleVideoSurface(handle: controller.handle!, fit: BoxFit.contain)
-              else if (track != null)
-                MusicNowPlayingView(track: track, resolving: state.resolving, lyricRevision: _lyricRevision)
-              else
-                PlayerIdleSurface(track: track, resolving: state.resolving),
+        openingFocus: _rootNode,
+        child: ColoredBox(
+          color: Colors.black,
+          child: DpadRegion(
+            memoryKey: 'music_player',
+            child: Focus(
+              focusNode: _rootNode,
+              onKeyEvent: _onRootKey,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // ---------------------------------------------------- the picture
+                  // Video keeps the picture; audio-only becomes the now-playing view:
+                  // the cover alone in the middle, and the synced lyrics beside it
+                  // once they arrive.
+                  if (controller.handle != null && !state.audioOnly)
+                    HandleVideoSurface(handle: controller.handle!, fit: BoxFit.contain)
+                  else if (track != null)
+                    MusicNowPlayingView(track: track, resolving: state.resolving, lyricRevision: _lyricRevision)
+                  else
+                    PlayerIdleSurface(track: track, resolving: state.resolving),
 
-              // --------------------------------------------------- top info bar
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                top: _controlsVisible ? 24.sp : -120.sp,
-                left: 48.sp,
-                right: 48.sp,
-                child: IgnorePointer(
-                  ignoring: !_controlsVisible,
-                  child: Row(
-                    children: [
-                      Icon(Icons.music_note_rounded, size: 28.sp, color: tvTheme.focusColor),
-                      SizedBox(width: 10.sp),
-                      Expanded(
-                        child: Text(
-                          track?.title ?? i18n('music_player_title'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyles.t22.copyWith(fontWeight: FontWeight.w700, color: Colors.white),
-                        ),
-                      ),
-                      SizedBox(width: 12.sp),
-                      if (track != null && track.archive.parts.length > 1)
-                        Text(
-                          'P${track.part.page}/${track.archive.parts.length}',
-                          style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: Colors.white70),
-                        ),
-                      SizedBox(width: 12.sp),
-                      if (BilibiliMusicApi.qualityLabel(state.quality).isNotEmpty)
-                        Text(
-                          BilibiliMusicApi.qualityLabel(state.quality),
-                          style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: Colors.white70),
-                        ),
-                      SizedBox(width: 12.sp),
-                      if (track != null)
-                        ConstrainedBox(
-                          constraints: BoxConstraints(maxWidth: 220.sp),
-                          child: Text(
-                            track.archive.upName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: Colors.white70),
+                  // --------------------------------------------------- top info bar
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    top: _controlsVisible ? 24.ts(context) : -120.ts(context),
+                    left: 48.sp,
+                    right: 48.sp,
+                    child: IgnorePointer(
+                      ignoring: !_controlsVisible,
+                      child: Row(
+                        children: [
+                          Icon(Icons.music_note_rounded, size: 28.ts(context), color: tvTheme.focusColor),
+                          SizedBox(width: 10.ts(context)),
+                          Expanded(
+                            child: Text(
+                              track?.title ?? i18n('music_player_title'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.t22.copyWith(fontWeight: FontWeight.w700, color: Colors.white),
+                            ),
                           ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ------------------------------------------------ bottom control bar
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeOutCubic,
-                bottom: _controlsVisible ? 32.sp : -180.sp,
-                left: 48.sp,
-                right: 48.sp,
-                child: IgnorePointer(
-                  ignoring: !_controlsVisible || _queueOpen,
-                  // Hidden must also mean unfocusable: a parked-offscreen bar
-                  // that keeps its buttons focusable lets the remote land on
-                  // controls the viewer cannot see.
-                  child: ExcludeFocus(
-                    excluding: !_controlsVisible || _queueOpen,
-                    child: MusicControlBar(
-                      active: _controlsVisible && !_queueOpen && !_settingsOpen,
-                      onSettings: _openSettings,
-                      activateInSeekZone: _activateInSeekZone,
-                      onQueue: _openQueue,
-                      onInteraction: _armAutoHide,
-                      onPickLyric: _showLyricPicker,
+                          SizedBox(width: 12.ts(context)),
+                          if (track != null && track.archive.parts.length > 1)
+                            Text(
+                              'P${track.part.page}/${track.archive.parts.length}',
+                              style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: Colors.white70),
+                            ),
+                          SizedBox(width: 12.ts(context)),
+                          if (BilibiliMusicApi.qualityLabel(state.quality).isNotEmpty)
+                            Text(
+                              BilibiliMusicApi.qualityLabel(state.quality),
+                              style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: Colors.white70),
+                            ),
+                          SizedBox(width: 12.ts(context)),
+                          if (track != null)
+                            ConstrainedBox(
+                              constraints: BoxConstraints(maxWidth: 220.ts(context)),
+                              child: Text(
+                                track.archive.upName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w500, color: Colors.white70),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ),
 
-              // -------------------------------------------------- settings panel
-              if (_settingsOpen)
-                Positioned(
-                  top: 100.sp,
-                  bottom: 100.sp,
-                  right: 48.sp,
-                  width: 640.sp,
-                  child: MusicPlayerSettingsPanel(onClose: _closeSettings),
-                ),
-
-              // --------------------------------------- flush-bottom progress line
-              Positioned(left: 0, right: 0, bottom: 0, child: MusicBottomProgressLine()),
-
-              // ------------------------------------------------------ queue panel
-              if (_queueOpen && !_settingsOpen)
-                Positioned(
-                  top: 100.sp,
-                  bottom: 100.sp,
-                  right: 48.sp,
-                  width: 520.sp,
-                  child: MusicQueuePanel(
-                    onClose: _closeQueue,
+                  // ------------------------------------------------ bottom control bar
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeOutCubic,
+                    bottom: _controlsVisible ? 32.ts(context) : -180.ts(context),
+                    left: 48.sp,
+                    right: 48.sp,
+                    child: IgnorePointer(
+                      ignoring: !_controlsVisible || _queueOpen,
+                      // Hidden must also mean unfocusable: a parked-offscreen bar
+                      // that keeps its buttons focusable lets the remote land on
+                      // controls the viewer cannot see.
+                      child: ExcludeFocus(
+                        excluding: !_controlsVisible || _queueOpen,
+                        child: MusicControlBar(
+                          active: _controlsVisible && !_queueOpen && !_settingsOpen,
+                          onSettings: _openSettings,
+                          activateInSeekZone: _activateInSeekZone,
+                          onQueue: _openQueue,
+                          onInteraction: _armAutoHide,
+                          onPickLyric: _showLyricPicker,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-            ],
+
+                  // -------------------------------------------------- settings panel
+                  if (_settingsOpen)
+                    Positioned(
+                      top: 100.sp,
+                      bottom: 100.sp,
+                      right: 48.sp,
+                      width: 640.ts(context),
+                      child: MusicPlayerSettingsPanel(onClose: _closeSettings),
+                    ),
+
+                  // --------------------------------------- flush-bottom progress line
+                  Positioned(left: 0, right: 0, bottom: 0, child: MusicBottomProgressLine()),
+
+                  // ------------------------------------------------------ queue panel
+                  if (_queueOpen && !_settingsOpen)
+                    Positioned(
+                      top: 100.sp,
+                      bottom: 100.sp,
+                      right: 48.sp,
+                      width: 520.ts(context),
+                      child: MusicQueuePanel(onClose: _closeQueue),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
-    ),
-    ),
     );
   }
 }
-

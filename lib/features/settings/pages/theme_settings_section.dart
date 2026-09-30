@@ -1,9 +1,9 @@
 import 'package:pure_live/app/consts/app_consts.dart';
-import 'package:pure_live/app/router/app_router.dart';
 import 'package:pure_live/exports/package_export.dart';
+import 'package:pure_live/app/router/app/app_router.dart';
 import 'package:pure_live/app/consts/app_theme_consts.dart';
-import 'package:pure_live/services/font_settings/font_settings_controller.dart';
 import 'package:pure_live/services/font_settings/font_settings_model.dart';
+import 'package:pure_live/services/font_settings/font_settings_controller.dart';
 import 'package:pure_live/services/theme_settings/theme_settings_controller.dart';
 
 class ThemeSettingsSectionPage extends ConsumerWidget {
@@ -60,7 +60,7 @@ class ThemeSettingsSectionPage extends ConsumerWidget {
                 ),
                 onSelect: () => const SettingsLoadingStyleRoute().push(context),
               ),
-              SizedBox(height: 8.sp),
+              SizedBox(height: 8.ts(context)),
               TvSettingsMenuTile<void>(
                 title: i18n('ui_background_settings'),
                 subtitle: i18n('background_entry_subtitle'),
@@ -69,7 +69,7 @@ class ThemeSettingsSectionPage extends ConsumerWidget {
               ),
             ],
           ),
-          SizedBox(height: 20.sp),
+          SizedBox(height: 20.ts(context)),
           TvSettingsGroupTitle(title: i18n('grid_spacing_settings')),
           TvSettingsCard(
             children: [
@@ -81,7 +81,7 @@ class ThemeSettingsSectionPage extends ConsumerWidget {
               ),
             ],
           ),
-          SizedBox(height: 20.sp),
+          SizedBox(height: 20.ts(context)),
           // Sub-pages the desktop theme page hosts, in its order: paging, the
           // language, the font family, then the per-component font sizes.
           TvSettingsGroupTitle(title: i18n('page_settings')),
@@ -95,7 +95,7 @@ class ThemeSettingsSectionPage extends ConsumerWidget {
               ),
             ],
           ),
-          SizedBox(height: 20.sp),
+          SizedBox(height: 20.ts(context)),
           TvSettingsGroupTitle(title: i18n('localization_settings')),
           TvSettingsCard(
             children: [
@@ -112,7 +112,7 @@ class ThemeSettingsSectionPage extends ConsumerWidget {
               ),
             ],
           ),
-          SizedBox(height: 20.sp),
+          SizedBox(height: 20.ts(context)),
           TvSettingsGroupTitle(title: i18n('font_family_settings')),
           TvSettingsCard(
             children: [
@@ -124,7 +124,7 @@ class ThemeSettingsSectionPage extends ConsumerWidget {
               ),
             ],
           ),
-          SizedBox(height: 20.sp),
+          SizedBox(height: 20.ts(context)),
           // The one global scale lives here, not on a sub-page: the per-level
           // fine-tuning (body/title sizes) is gone — a single multiplier keeps
           // every tier's contrast intact, which is what the fine-tuning broke.
@@ -136,7 +136,12 @@ class ThemeSettingsSectionPage extends ConsumerWidget {
                 icon: Icons.format_size_rounded,
                 value: fontTextScale,
                 min: 0.8,
-                max: 1.6,
+                // The user scale stacks on the panel's legibility correction
+                // (1.5x on a 720p TV), so 1.6 here painted at 2.4x and broke
+                // every layout that followed the font. 1.3 keeps the worst
+                // case at 1.95x — past what the panel lift already gives,
+                // short of the zone where grids collapse and dialogs scroll.
+                max: 1.3,
                 step: 0.05,
                 displayValue: '${(fontTextScale * 100).toStringAsFixed(0)}%',
                 onChanged: (v) => font.updateSettings(fontSettings.copyWith(textScaleFactor: v)),

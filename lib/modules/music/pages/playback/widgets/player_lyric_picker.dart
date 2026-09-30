@@ -1,7 +1,5 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
-import 'package:pure_live/exports/common_export.dart';
-import 'package:pure_live/modules/media/models/models.dart';
+import 'package:pure_live/exports/exports.dart';
+import 'package:pure_live/modules/vod/models/models.dart';
 import 'package:pure_live/modules/music/services/music_lyric_service.dart';
 
 /// The lyric picker: every candidate the chain found, one row each with the
@@ -9,7 +7,7 @@ import 'package:pure_live/modules/music/services/music_lyric_service.dart';
 /// manual pick) is marked; picking a row remembers it for every later play of
 /// this track.
 class MusicLyricPickerDialog extends StatelessWidget {
-  const MusicLyricPickerDialog({super.key,required this.track});
+  const MusicLyricPickerDialog({super.key, required this.track});
 
   final MusicTrack track;
 
@@ -21,8 +19,8 @@ class MusicLyricPickerDialog extends StatelessWidget {
     return TvDialog(
       title: i18n('music_lyric_pick'),
       child: SizedBox(
-        width: 720.sp,
-        height: 560.sp,
+        width: 720.ts(context),
+        height: 560.ts(context),
         child: FutureBuilder<List<MusicLyricCandidate>>(
           future: service.fetchLyricCandidates(
             track.title,
@@ -37,8 +35,11 @@ class MusicLyricPickerDialog extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const CircularProgressIndicator(),
-                  SizedBox(height: 16.sp),
-                  Text(i18n('ui_loading'), style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w300, color: theme.secondaryTextColor)),
+                  SizedBox(height: 16.ts(context)),
+                  Text(
+                    i18n('ui_loading'),
+                    style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w300, color: theme.secondaryTextColor),
+                  ),
                 ],
               );
             }
@@ -46,7 +47,10 @@ class MusicLyricPickerDialog extends StatelessWidget {
             final candidates = snapshot.data ?? const <MusicLyricCandidate>[];
             if (candidates.isEmpty) {
               return Center(
-                child: Text(i18n('music_lyric_none'), style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w300, color: theme.secondaryTextColor)),
+                child: Text(
+                  i18n('music_lyric_none'),
+                  style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w300, color: theme.secondaryTextColor),
+                ),
               );
             }
 
@@ -81,4 +85,3 @@ class MusicLyricPickerDialog extends StatelessWidget {
     );
   }
 }
-

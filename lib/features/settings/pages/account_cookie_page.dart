@@ -3,8 +3,8 @@ import 'package:pure_live/services/index.dart';
 import 'package:pure_live/platforms/sites.dart';
 import 'package:pure_live/exports/package_export.dart';
 import 'package:pure_live/platforms/douyu/douyu_utils.dart';
-import 'package:pure_live/features/remote/tv_remote_receiver.dart';
-import 'package:pure_live/features/remote/models/server_state.dart';
+import 'package:pure_live/domains/device/tv_remote_receiver.dart';
+import 'package:pure_live/domains/device/models/server_state.dart';
 import 'package:pure_live/features/settings/pages/account_settings_section.dart';
 
 /// One platform's cookie page: the cookie itself is entered on the phone.
@@ -163,11 +163,12 @@ class _AccountCookiePageState extends ConsumerState<AccountCookiePage> {
       'guest' => i18n('douyu_cookie_guest'),
       // The web `dy_auth` is opaque: no endpoint says when it ends, so the page
       // says that instead of a bare expiry.
-      'valid' => expiry == null
-          ? i18n('douyu_cookie_valid_no_expiry')
-          : DouyuUtils.canRefreshSession(cookie)
-          ? i18n('douyu_cookie_valid_auto_renew', args: {'time': at})
-          : i18n('douyu_cookie_valid_needs_repaste', args: {'time': at}),
+      'valid' =>
+        expiry == null
+            ? i18n('douyu_cookie_valid_no_expiry')
+            : DouyuUtils.canRefreshSession(cookie)
+            ? i18n('douyu_cookie_valid_auto_renew', args: {'time': at})
+            : i18n('douyu_cookie_valid_needs_repaste', args: {'time': at}),
       'expiredRefreshable' => i18n('douyu_cookie_expired_refreshable', args: {'time': at}),
       _ => i18n('douyu_cookie_expired', args: {'time': at}),
     };
@@ -198,103 +199,116 @@ class _AccountCookiePageState extends ConsumerState<AccountCookiePage> {
     final bool configured = _isDouyu ? DouyuUtils.hasSession(stored) : stored.isNotEmpty;
 
     // Centred rather than split into columns: the page has one job, and the
-    // phone does it.
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: 660.sp),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            TvSettingsGroupTitle(title: i18n('phone_sync_title')),
-            TvSettingsCard(
-              children: [
-                if (_phoneUrl.isEmpty)
-                  SizedBox(
-                    height: 220.h,
-                    child: AppStatusView(
-                      type: _phoneStarting ? AppStatusType.loading : AppStatusType.empty,
-                      subtitle: _phoneStarting ? i18n('ui_loading') : i18n('remote_service_unavailable'),
-                      isMini: true,
-                      icon: Remix.smartphone_line,
-                    ),
-                  )
-                else
-                  Padding(
-                    padding: EdgeInsets.all(16.sp),
-                    child: Center(child: TvQrCodeCard(qrData: _phoneUrl, urlText: _phoneUrl)),
-                  ),
-              ],
-            ),
-            SizedBox(height: 14.h),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12.sp),
-              child: Text(
-                i18n('cookie_scan_hint', args: {'name': widget.platform.name}),
-                textAlign: TextAlign.center,
-                style: AppTextStyles.t18.copyWith(fontWeight: FontWeight.w300, color: theme.secondaryTextColor, height: 1.4),
-              ),
-            ),
-
-            // What is stored — and only when there is something to say: an
-            // "empty" state next to the QR that fills it is noise.
-            if (configured) ...[
-              SizedBox(height: 18.h),
-              _StatusLine(
-                text: _isDouyu ? _douyuSessionSummary(stored) : i18n('cookie_configured'),
-                color: const Color(0xFF4CAF50),
-                icon: Icons.verified_rounded,
-              ),
-            ],
-
-            if (_isDouyu) ...[
-              SizedBox(height: 18.h),
+    // phone does it. Same shell as the bilibili account page — a bounded
+    // height plus Align is what actually centres here: the section scaffold
+    // above is a scroll view with unbounded height, and an Align alone under
+    // it cannot apply the vertical centering, so the QR block stuck to the top
+    // read as broken on a tall panel.
+    final double contentHeight = MediaQuery.sizeOf(context).height - kToolbarHeight - MediaQuery.paddingOf(context).top;
+    return SizedBox(
+      height: contentHeight,
+      child: Align(
+        alignment: Alignment.center,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 660.ts(context)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              TvSettingsGroupTitle(title: i18n('phone_sync_title')),
               TvSettingsCard(
                 children: [
-                  TvSettingsSwitchTile(
-                    title: i18n('douyu_force_renewal'),
-                    subtitle: i18n('douyu_force_renewal_hint'),
-                    icon: Icons.autorenew_rounded,
-                    value: cookies.douyuForceRenewal,
-                    onChanged: (value) =>
-                        ref.read(cookieControllerProvider.notifier).setDouyuForceRenewal(value),
+                  if (_phoneUrl.isEmpty)
+                    SizedBox(
+                      height: 220.h,
+                      child: AppStatusView(
+                        type: _phoneStarting ? AppStatusType.loading : AppStatusType.empty,
+                        subtitle: _phoneStarting ? i18n('ui_loading') : i18n('remote_service_unavailable'),
+                        isMini: true,
+                        icon: Remix.smartphone_line,
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: EdgeInsets.all(16.ts(context)),
+                      child: Center(
+                        child: TvQrCodeCard(qrData: _phoneUrl, urlText: _phoneUrl),
+                      ),
+                    ),
+                ],
+              ),
+              SizedBox(height: 14.h),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12.ts(context)),
+                child: Text(
+                  i18n('cookie_scan_hint', args: {'name': widget.platform.name}),
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.t18.copyWith(
+                    fontWeight: FontWeight.w300,
+                    color: theme.secondaryTextColor,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+
+              // What is stored — and only when there is something to say: an
+              // "empty" state next to the QR that fills it is noise.
+              if (configured) ...[
+                SizedBox(height: 18.h),
+                _StatusLine(
+                  text: _isDouyu ? _douyuSessionSummary(stored) : i18n('cookie_configured'),
+                  color: const Color(0xFF4CAF50),
+                  icon: Icons.verified_rounded,
+                ),
+              ],
+
+              if (_isDouyu) ...[
+                SizedBox(height: 18.h),
+                TvSettingsCard(
+                  children: [
+                    TvSettingsSwitchTile(
+                      title: i18n('douyu_force_renewal'),
+                      subtitle: i18n('douyu_force_renewal_hint'),
+                      icon: Icons.autorenew_rounded,
+                      value: cookies.douyuForceRenewal,
+                      onChanged: (value) => ref.read(cookieControllerProvider.notifier).setDouyuForceRenewal(value),
+                    ),
+                  ],
+                ),
+              ],
+
+              SizedBox(height: 22.h),
+              // Wrap, not Row: a translated label is as wide as the language makes
+              // it, and two of them do not fit on one line in every locale.
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 20.ts(context),
+                runSpacing: 12.ts(context),
+                children: [
+                  if (_isDouyu)
+                    TvButton(
+                      title: i18n('douyu_cookie_refresh_now'),
+                      size: TvButtonSize.medium,
+                      isSecondary: true,
+                      icon: Icon(Remix.refresh_line, size: 20.ts(context)),
+                      onTap: _renewing || !configured ? null : () => unawaited(_renewDouyuSession()),
+                    ),
+                  TvButton(
+                    title: i18n('clear'),
+                    size: TvButtonSize.medium,
+                    isSecondary: true,
+                    icon: Icon(Remix.delete_bin_6_line, size: 20.ts(context)),
+                    onTap: configured ? _clear : null,
                   ),
                 ],
               ),
-            ],
 
-            SizedBox(height: 22.h),
-            // Wrap, not Row: a translated label is as wide as the language makes
-            // it, and two of them do not fit on one line in every locale.
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 20.sp,
-              runSpacing: 12.sp,
-              children: [
-                if (_isDouyu)
-                  TvButton(
-                    title: i18n('douyu_cookie_refresh_now'),
-                    size: TvButtonSize.medium,
-                    isSecondary: true,
-                    icon: Icon(Remix.refresh_line, size: 20.sp),
-                    onTap: _renewing || !configured ? null : () => unawaited(_renewDouyuSession()),
-                  ),
-                TvButton(
-                  title: i18n('clear'),
-                  size: TvButtonSize.medium,
-                  isSecondary: true,
-                  icon: Icon(Remix.delete_bin_6_line, size: 20.sp),
-                  onTap: configured ? _clear : null,
-                ),
+              if (_message.isNotEmpty) ...[
+                SizedBox(height: 18.h),
+                _StatusLine(text: _message, color: theme.focusColor, icon: Icons.check_circle_outline_rounded),
               ],
-            ),
-
-            if (_message.isNotEmpty) ...[
-              SizedBox(height: 18.h),
-              _StatusLine(text: _message, color: theme.focusColor, icon: Icons.check_circle_outline_rounded),
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -313,12 +327,12 @@ class _StatusLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 12.sp),
+      padding: EdgeInsets.symmetric(horizontal: 12.ts(context)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 20.sp, color: color),
-          SizedBox(width: 8.sp),
+          Icon(icon, size: 20.ts(context), color: color),
+          SizedBox(width: 8.ts(context)),
           Flexible(
             child: Text(
               text,

@@ -1,12 +1,7 @@
 import 'dart:math' as math;
-
 import 'package:dpad/dpad.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_screenutil_plus/flutter_screenutil_plus.dart';
-import 'package:pure_live/features/wallpaper/wallpaper_image.dart';
+import 'package:pure_live/exports/exports.dart';
 import 'package:pure_live/services/background_config/remote/background_catalog.dart';
-import 'package:pure_live/shared/common/utils/color_util.dart';
-import 'package:pure_live/shared/theme/index.dart';
 
 /// One grid tile of the wallpaper browser: pictures load a grid-sized copy,
 /// live wallpapers show their poster, gradients are painted locally.
@@ -36,7 +31,7 @@ class WallpaperTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.tvTheme;
-    final radius = BorderRadius.circular(12.sp);
+    final radius = BorderRadius.circular(12.ts(context));
 
     return DpadFocusable(
       onSelect: onSelect,
@@ -44,11 +39,7 @@ class WallpaperTile extends StatelessWidget {
         if (focused) onFocus?.call();
       },
       effects: <DpadEffect>[
-        DpadScaleEffect(
-          scale: 1.04,
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOutCubic,
-        ),
+        DpadScaleEffect(scale: 1.04, duration: const Duration(milliseconds: 120), curve: Curves.easeOutCubic),
         DpadGlowEffect(
           color: theme.focusColor,
           blurRadius: 16,
@@ -67,20 +58,24 @@ class WallpaperTile extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            ColoredBox(color: theme.cardColor, child: _buildPreview(theme)),
+            ColoredBox(color: theme.cardColor, child: _buildPreview(context, theme)),
             if (item.bytes != null)
-              Positioned(right: 6.sp, bottom: 6.sp, child: WallpaperBadge(text: sizeLabel(item.bytes!))),
+              Positioned(
+                right: 6.sp,
+                bottom: 6.sp,
+                child: WallpaperBadge(text: sizeLabel(item.bytes!)),
+              ),
             if (kind == BackgroundKind.video)
               Positioned(
                 left: 6.sp,
                 bottom: 6.sp,
-                child: Icon(Icons.play_circle_fill, size: 20.sp, color: Colors.white.withValues(alpha: 0.9)),
+                child: Icon(Icons.play_circle_fill, size: 20.ts(context), color: Colors.white.withValues(alpha: 0.9)),
               ),
             if (current)
               Positioned(
                 right: 6.sp,
                 top: 6.sp,
-                child: Icon(Icons.check_circle, size: 20.sp, color: theme.focusColor),
+                child: Icon(Icons.check_circle, size: 20.ts(context), color: theme.focusColor),
               ),
           ],
         ),
@@ -88,7 +83,7 @@ class WallpaperTile extends StatelessWidget {
     );
   }
 
-  Widget _buildPreview(TvThemeData theme) {
+  Widget _buildPreview(BuildContext context, TvThemeData theme) {
     if (kind == BackgroundKind.gradient) {
       return GradientPreview(item: item);
     }
@@ -101,7 +96,7 @@ class WallpaperTile extends StatelessWidget {
         memCacheWidth: 480,
         placeholder: ColoredBox(color: theme.cardColor),
         fallback: Center(
-          child: Icon(Icons.broken_image_outlined, size: 24.sp, color: theme.secondaryTextColor),
+          child: Icon(Icons.broken_image_outlined, size: 24.ts(context), color: theme.secondaryTextColor),
         ),
       );
     }
@@ -112,7 +107,7 @@ class WallpaperTile extends StatelessWidget {
       memCacheWidth: 480,
       placeholder: ColoredBox(color: theme.cardColor),
       fallback: Center(
-        child: Icon(Icons.broken_image_outlined, size: 24.sp, color: theme.secondaryTextColor),
+        child: Icon(Icons.broken_image_outlined, size: 24.ts(context), color: theme.secondaryTextColor),
       ),
     );
   }
@@ -161,12 +156,7 @@ class GradientPreview extends StatelessWidget {
     final (Alignment begin, Alignment end) = alignmentsFor(item.deg);
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: begin,
-          end: end,
-          colors: colors,
-          stops: positions,
-        ),
+        gradient: LinearGradient(begin: begin, end: end, colors: colors, stops: positions),
       ),
     );
   }
@@ -180,13 +170,6 @@ class WallpaperBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 6.sp, vertical: 2.sp),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(6.sp),
-      ),
-      child: Text(text, style: AppTextStyles.t15.copyWith(color: Colors.white)),
-    );
+    return TvCoverChip(label: text);
   }
 }
