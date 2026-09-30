@@ -498,7 +498,7 @@ val compat23AndroidJar = run {
     File(platformDir, "android.jar")
 }
 if (!compat23AndroidJar.isFile) throw GradleException("android.jar not found at $compat23AndroidJar")
-val compat23EmbeddingCacheRoot = File(gradle.gradleHomeDir, "caches/modules-2/files-2.1/io.flutter")
+val compat23EmbeddingCacheRoot = File(gradle.gradleUserHomeDir, "caches/modules-2/files-2.1/io.flutter")
 
 // Transitive dependencies declared by the embedding POM, lost when the module
 // itself is excluded (the patched jar carries no POM metadata). Versions pinned
