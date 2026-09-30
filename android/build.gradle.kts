@@ -23,27 +23,6 @@ allprojects {
     }
 }
 
-val pubspecVersionCode: String by lazy {
-    try {
-        val pubspecFile = rootProject.file("../pubspec.yaml")
-        if (pubspecFile.exists()) {
-            val versionLine = pubspecFile.readLines().find { it.trim().startsWith("version:") }
-            versionLine?.substringAfterLast("+")?.trim() ?: "1"
-        } else {
-            "1"
-        }
-    } catch (e: Exception) {
-        "1"
-    }
-}
-
-val localProperties = Properties().apply {
-    val file = rootProject.file("local.properties")
-    if (file.exists()) {
-        file.inputStream().use { load(it) }
-    }
-}
-
 // Android 6.0 (API 23) floor. Mirrors android6MinSdk in app/build.gradle.kts —
 // the app pins its own copy so Flutter's build-time minSdk migrator cannot
 // rewrite it, and this one is applied to the plugin subprojects below.

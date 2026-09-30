@@ -45,7 +45,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   FocusNode _sectionNode(String key) => _sectionFocusNodes.putIfAbsent(key, FocusNode.new);
 
   /// The mode switch button (in the old backup slot): shows the active mode,
-  Widget _buildModeButton(AppMode mode, bool isExpanded, double textScale) {
+  Widget _buildModeButton(AppMode mode, bool isExpanded) {
     final (String label, String short, IconData icon) = switch (mode) {
       AppMode.live => (i18n('mode_live'), i18n('menu_short_mode_live'), Icons.live_tv_rounded),
       AppMode.video => (i18n('mode_video'), i18n('menu_short_mode_video'), Icons.movie_outlined),
@@ -61,7 +61,6 @@ class _HomePageState extends ConsumerState<HomePage> {
       item: AppMenuItem(index: -1, title: label, shortTitle: short, icon: icon),
       isExpanded: isExpanded,
       isSelected: false,
-      textScale: textScale,
       focusNode: _modeFocusNode,
       onTap: _showModeDialog,
     );
@@ -139,7 +138,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   /// The active mode's own rail entries. Live reuses the configured side menu;
   /// music and video carry their fixed section lists, selected through their
   /// section-index providers.
-  List<Widget> _buildModeRailItems(AppMode mode, bool isExpanded, double textScale) {
+  List<Widget> _buildModeRailItems(AppMode mode, bool isExpanded) {
     switch (mode) {
       case AppMode.live:
         final menuList = ref.watch(sideMenuListProvider);
@@ -147,13 +146,12 @@ class _HomePageState extends ConsumerState<HomePage> {
         return [
           for (final item in menuList)
             Padding(
-              padding: EdgeInsets.only(bottom: 20.sp),
+              padding: EdgeInsets.only(bottom: 20.ts(context)),
               child: _buildAdaptiveItem(
                 ref: ref,
                 item: item,
                 isExpanded: isExpanded,
                 isSelected: currentIndex == item.index,
-                textScale: textScale,
                 focusNode: _nodeFor(item.index),
                 onTap: () => ref.read(sideMenuIndexProvider.notifier).changeIndex(item.index),
               ),
@@ -174,13 +172,12 @@ class _HomePageState extends ConsumerState<HomePage> {
         return [
           for (final (index2, (labelKey, icon)) in labels.indexed)
             Padding(
-              padding: EdgeInsets.only(bottom: 20.sp),
+              padding: EdgeInsets.only(bottom: 20.ts(context)),
               child: _buildAdaptiveItem(
                 ref: ref,
                 item: AppMenuItem(index: index2, title: i18n(labelKey), shortTitle: i18n(labelKey), icon: icon),
                 isExpanded: isExpanded,
                 isSelected: railIndex == index2,
-                textScale: textScale,
                 focusNode: _sectionNode('music_$index2'),
                 onTap: () => ref.read(musicSectionIndexProvider.notifier).change(kMusicRailGroups[index2].first.index),
               ),
@@ -199,13 +196,12 @@ class _HomePageState extends ConsumerState<HomePage> {
         return [
           for (final (railIndex, (sectionIndex, labelKey, icon)) in entries.indexed)
             Padding(
-              padding: EdgeInsets.only(bottom: 20.sp),
+              padding: EdgeInsets.only(bottom: 20.ts(context)),
               child: _buildAdaptiveItem(
                 ref: ref,
                 item: AppMenuItem(index: railIndex, title: i18n(labelKey), shortTitle: i18n(labelKey), icon: icon),
                 isExpanded: isExpanded,
                 isSelected: selected == sectionIndex,
-                textScale: textScale,
                 focusNode: _sectionNode('video_$railIndex'),
                 onTap: () => ref.read(videoSectionIndexProvider.notifier).change(sectionIndex),
               ),
@@ -322,10 +318,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     // scale, so its width and its vertical rhythm follow the text: a fixed rail
     // cut the menu names off, and left the icons the only thing that changed
     // size when the user enlarged the font.
-    final double textScale = TvTextScale.factorOf(context);
-    // Expanded carries the small pill (icon + four-character name) with margin;
-    // collapsed keeps the 64dp icon tile.
-    final sidebarWidth = (isExpanded ? 216.ts(context) : 110.ts(context)) * textScale;
+    final sidebarWidth = isExpanded ? 228.ts(context) : 160.ts(context);
 
     // The top-left button switches the whole app between live / music / video.
     // Music and video own their own UI stacks; the live rail's destinations
@@ -387,7 +380,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                       // mode switch must be reachable no matter how far the
                       // section list has scrolled.
                       Padding(
-                        padding: EdgeInsets.only(bottom: 6.sp),
+                        padding: EdgeInsets.only(bottom: 6.ts(context)),
                         child: TvDigitalClock(
                           format: isExpanded ? 'HH:mm:ss' : 'HH:mm',
                           style: AppTextStyles.t20.copyWith(
@@ -409,8 +402,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                         ),
                       SizedBox(height: 15.ts(context)),
                       Padding(
-                        padding: EdgeInsets.only(bottom: 20.sp),
-                        child: _buildModeButton(appMode, isExpanded, textScale),
+                        padding: EdgeInsets.only(bottom: 20.ts(context)),
+                        child: _buildModeButton(appMode, isExpanded),
                       ),
                       // The active mode's own navigation — live destinations,
                       // music sections or video sections — is the only part
@@ -420,16 +413,13 @@ class _HomePageState extends ConsumerState<HomePage> {
                         // Edge fades mark the clipped entries as scroll
                         // content: at the largest font scale a half-shown
                         // item otherwise reads as a broken rail.
-                        child: SingleChildScrollView(
-                          child: Column(children: _buildModeRailItems(appMode, isExpanded, textScale)),
-                        ),
+                        child: SingleChildScrollView(child: Column(children: _buildModeRailItems(appMode, isExpanded))),
                       ),
                       _buildAdaptiveItem(
                         ref: ref,
                         item: mySettingsItem,
                         isExpanded: isExpanded,
                         isSelected: currentIndex == mySettingsItem.index,
-                        textScale: textScale,
                         focusNode: _nodeFor(mySettingsItem.index),
                         // Settings opens as its own page (title bar, back button
                         // and the configuration-preview action), like the desktop
@@ -531,7 +521,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     required bool isExpanded,
     required bool isSelected,
     required VoidCallback onTap,
-    required double textScale,
     FocusNode? focusNode,
   }) {
     if (isExpanded) {
@@ -540,7 +529,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         padding: EdgeInsets.symmetric(horizontal: 16.ts(context)),
         child: TvButton(
           title: item.title,
-          icon: Icon(item.icon, size: 36.ts(context)),
+          icon: Icon(item.icon),
           iconPosition: TvIconPosition.left,
           size: TvButtonSize.medium,
           isSecondary: !isSelected,
@@ -552,23 +541,16 @@ class _HomePageState extends ConsumerState<HomePage> {
       ).animate().fadeIn(duration: 150.ms).slideX(begin: -0.05, end: 0, duration: 200.ms, curve: Curves.easeOutCubic);
     }
 
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 10.ts(context)),
-      child: Center(
-        child: TvIconButton(
-          icon: Icon(item.icon),
-          // Collapsed rail: the icon alone left the destinations ambiguous, so each
-          // tile carries its two-character name underneath.
-          label: item.shortTitle.isEmpty ? item.title : item.shortTitle,
-          selected: isSelected,
-          size: TvIconButtonSize.medium,
-          useFadedFocus: true,
-          isSecondary: !isSelected,
-          expand: false,
-          focusNode: focusNode,
-          onTap: onTap,
-        ),
-      ),
+    return TvIconButton(
+      icon: Icon(item.icon),
+      label: item.shortTitle.isEmpty ? item.title : item.shortTitle,
+      selected: isSelected,
+      size: TvIconButtonSize.medium,
+      useFadedFocus: true,
+      isSecondary: !isSelected,
+      expand: false,
+      focusNode: focusNode,
+      onTap: onTap,
     );
   }
 

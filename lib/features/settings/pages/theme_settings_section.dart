@@ -50,7 +50,7 @@ class ThemeSettingsSectionPage extends ConsumerWidget {
                 leading: TvLoadingStylePreview(
                   style: themeState.loadingStyle,
                   color: loadingColor,
-                  size: 30.w,
+                  size: 30.ts(context),
                   theme: tvTheme,
                 ),
                 trailingBuilder: (context, focused) => tvSettingsValueLabel(
@@ -141,7 +141,7 @@ class ThemeSettingsSectionPage extends ConsumerWidget {
                 // every layout that followed the font. 1.3 keeps the worst
                 // case at 1.95x — past what the panel lift already gives,
                 // short of the zone where grids collapse and dialogs scroll.
-                max: 1.3,
+                max: 1.6,
                 step: 0.05,
                 displayValue: '${(fontTextScale * 100).toStringAsFixed(0)}%',
                 onChanged: (v) => font.updateSettings(fontSettings.copyWith(textScaleFactor: v)),

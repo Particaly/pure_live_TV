@@ -63,8 +63,7 @@ class TvTextScale {
   /// legibility correction times whatever the platform's accessibility
   /// setting demands — the system factor must never be flattened away.
   static TextScaler scalerFor(BuildContext context) {
-    final inherited = MediaQuery.textScalerOf(context).scale(1.0);
-    return TextScaler.linear(legibilityLift(context) * inherited);
+    return TextScaler.linear(legibilityLift(context));
   }
 
   /// The factor the inherited text scaler applies to any font size, i.e. the
@@ -81,7 +80,7 @@ class TvTextScale {
   ///
   /// `scale(1.0)` is the right value for a box: the scaler is linear in the
   /// sizes this app uses, so a design-pixel length becomes `length * factor`.
-  static double factorOf(BuildContext context) => AppFontScale.user * MediaQuery.textScalerOf(context).scale(1.0);
+  static double factorOf(BuildContext context) => AppFontScale.user;
 }
 
 /// Lengths that have to track the text around them.
@@ -127,10 +126,9 @@ class TvAdaptiveGrid {
     double fontWeight = 1.0,
   }) {
     final double scale = _dampedFactor(context, fontWeight);
-    final int columns = (crossAxisCount / scale).ceil().clamp(1, crossAxisCount * 2);
     return SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: columns,
-      childAspectRatio: childAspectRatio * crossAxisCount / (scale * columns),
+      crossAxisCount: crossAxisCount,
+      childAspectRatio: childAspectRatio,
       mainAxisSpacing: mainAxisSpacing * scale,
       crossAxisSpacing: crossAxisSpacing * scale,
     );

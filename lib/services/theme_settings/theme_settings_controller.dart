@@ -44,15 +44,29 @@ class ThemeSettingsController extends _$ThemeSettingsController {
   /// Special small grids stay exempt: the colour/icon/loading pickers, the
   /// wallpaper tiles, episode chips and queue rows — none of them is a poster
   /// card.
-  static SliverGridDelegateWithFixedCrossAxisCount cardGridDelegate(BuildContext context, WidgetRef ref) {
+  static SliverGridDelegateWithFixedCrossAxisCount cardGridDelegate(
+    BuildContext context,
+    WidgetRef ref, {
+    int? gridColums,
+    double? gridAspectRatio,
+  }) {
     final ThemeSettingsModel themeState = ref.watch(themeSettingsControllerProvider);
-    final int columns = themeState.denseRoomLayout;
+    // Rebuild when the font scale changes — TvTextScale.factorOf reads it via
+    // a static getter, so the grid won't update on its own.
+    ref.watch(fontSettingsControllerProvider);
+    int columns = gridColums ?? themeState.denseRoomLayout;
+    final textScaleFactor = TvTextScale.factorOf(context);
+    if (textScaleFactor > 1.0 && textScaleFactor <= 1.3) {
+      columns -= 1.clamp(1, columns);
+    } else if (textScaleFactor > 1.3 && textScaleFactor <= 1.6) {
+      columns -= 2.clamp(1, columns);
+    }
     return TvAdaptiveGrid.fixed(
       context,
       crossAxisCount: columns,
       mainAxisSpacing: themeState.mainAxisSpacing.w,
       crossAxisSpacing: themeState.crossAxisSpacing.w,
-      childAspectRatio: roomCardAspectRatio(columns),
+      childAspectRatio: gridAspectRatio ?? roomCardAspectRatio(columns),
     );
   }
 
