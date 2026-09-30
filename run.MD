@@ -35,7 +35,10 @@ Flutter 3.47 的官方产物（引擎 so 与 embedding jar）都是按 minSdk 24
    - 清除 .gnu.version 符号版本要求（NDK 新版引入的 LIBC_N 标签，
      Android 6 的 libc 没有版本定义，带版本查找必然失败）；
    - `getifaddrs`/`freeifaddrs` 弱化（Android 7 才有，弱引用在旧系统解析为
-     null，相关功能在 Dart 层有 API 24 守卫）。
+     null，相关功能在 Dart 层有 API 24 守卫）；
+   - 同时覆盖 64 位（arm64/x86_64）与 32 位（armeabi-v7a）ELF，打完逐库
+     校验，仍有版本化导入或未重命名符号时构建直接失败（曾因 32 位节头
+     偏移写错导致 v7a 包漏打补丁、真机启动闪退）。
 2. **embedding 类替换**（patchFlutterEmbedding* 任务）：upstream 在 minSdk
    提到 24 时删除了 LocalizationPlugin 的 API 24 守卫，FlutterEngine 构造即
    崩。compat23patch/ 下的补丁源码恢复守卫后重新编译，替换进 embedding jar

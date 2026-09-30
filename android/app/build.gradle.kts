@@ -192,7 +192,11 @@ flutter {
 //
 // Wired as a doLast on every merge*NativeLibs task so the patch lands before
 // strip/package in every variant. Idempotent: a library with nothing to fix
-// keeps its bytes untouched.
+// keeps its bytes untouched. A doLast side effect is not part of the task's
+// fingerprint, so the merge tasks are pinned to always execute (no up-to-date
+// replay, no build-cache reuse) and a post-patch gate fails the build when any
+// packaged library still cannot load on API 23 — both guards exist because the
+// ELF32 (armeabi-v7a) rewrite once silently no-op'd and shipped a crashing APK.
 // ---------------------------------------------------------------------------
 
 // API 24+ bionic fortify wrappers referenced by prebuilt .so files, mapped to
@@ -360,8 +364,19 @@ private fun clearElfSymbolVersions(soFile: File): Boolean {
     val eShnum = buf.getShort(if (is64) 0x3c else 0x30).toInt() and 0xffff
     if (eShoff <= 0L || eShentsize == 0 || eShnum == 0) return false
 
-    fun field64(base: Int, at: Int): Long = buf.getLong(base + at)
-    fun field32(base: Int, at: Int): Long = buf.getInt(base + at).toLong() and 0xffffffffL
+    // Section header field offsets for both layouts, used everywhere below.
+    // armeabi-v7a ships ELF32 files: reading ELF64 offsets there (sh_offset 24
+    // instead of 16, ...) makes the whole rewrite a silent no-op on that ABI
+    // while the 64-bit ABIs come out patched — exactly what shipped as the
+    // crashing v7a APK.
+    val shAddrAt = if (is64) 16 else 12
+    val shOffsetAt = if (is64) 24 else 16
+    val shSizeAt = if (is64) 32 else 20
+    val shLinkAt = if (is64) 40 else 24
+    val shEntsizeAt = if (is64) 56 else 36
+
+    fun field(base: Int, at: Int): Long =
+        if (is64) buf.getLong(base + at) else buf.getInt(base + at).toLong() and 0xffffffffL
 
     var dynOff = -1L
     var dynSize = 0L
@@ -372,13 +387,13 @@ private fun clearElfSymbolVersions(soFile: File): Boolean {
         val base = (eShoff + i.toLong() * eShentsize).toInt()
         when (buf.getInt(base + 4)) {
             6 -> { // SHT_DYNAMIC
-                dynOff = if (is64) field64(base, 24) else field32(base, 24)
-                dynSize = if (is64) field64(base, 32) else field32(base, 32)
-                dynEnt = buf.getInt(base + 56)
+                dynOff = field(base, shOffsetAt)
+                dynSize = field(base, shSizeAt)
+                dynEnt = buf.getInt(base + shEntsizeAt)
             }
             0x6fffffff -> { // SHT_GNU_versym (the .dynamic *tag* DT_VERSYM is a different value)
-                versymOff = if (is64) field64(base, 24) else field32(base, 24)
-                versymLink = buf.getInt(base + 40)
+                versymOff = field(base, shOffsetAt)
+                versymLink = buf.getInt(base + shLinkAt)
             }
         }
     }
@@ -390,9 +405,9 @@ private fun clearElfSymbolVersions(soFile: File): Boolean {
             val base = (eShoff + i.toLong() * eShentsize).toInt()
             val type = buf.getInt(base + 4)
             if (type == 8) continue // SHT_NOBITS has no file backing
-            val addr = if (is64) field64(base, 16) else field32(base, 16)
-            val off = if (is64) field64(base, 24) else field32(base, 24)
-            val size = if (is64) field64(base, 32) else field32(base, 32)
+            val addr = field(base, shAddrAt)
+            val off = field(base, shOffsetAt)
+            val size = field(base, shSizeAt)
             if (addr != 0L && vaddr >= addr && vaddr < addr + size) return off + (vaddr - addr)
         }
         return vaddr
@@ -416,8 +431,8 @@ private fun clearElfSymbolVersions(soFile: File): Boolean {
         // .gnu.version is a u16 array parallel to .dynsym; its sh_link points
         // at the dynsym section whose size bounds the array.
         val symBase = (eShoff + versymLink.toLong() * eShentsize).toInt()
-        val symSize = if (is64) field64(symBase, 32) else field32(symBase, 32)
-        val symEnt = buf.getInt(symBase + 56)
+        val symSize = field(symBase, shSizeAt)
+        val symEnt = buf.getInt(symBase + shEntsizeAt)
         if (symEnt > 0) {
             val vs = v2f(versymVaddr).toInt()
             var changed = false
@@ -443,23 +458,124 @@ private fun clearElfSymbolVersions(soFile: File): Boolean {
     return modified
 }
 
-tasks.matching { it.name.matches(Regex("merge\\w*NativeLibs")) }.configureEach {
-    doLast {
-        outputs.files.filter { it.isDirectory }.forEach { dir ->
-            dir.walkTopDown()
-                .filter { it.isFile && it.name.endsWith(".so") }
-                .forEach { soFile ->
-                    try {
-                        if (patchElfUndSymbols(soFile, api23NativeSymbolRenames, api23NativeSymbolWeakify)) {
-                            logger.lifecycle("api23 patch: patched imports in ${soFile.name}")
-                        }
-                        if (clearElfSymbolVersions(soFile)) {
-                            logger.lifecycle("api23 patch: cleared symbol version requirements in ${soFile.name}")
-                        }
-                    } catch (error: Throwable) {
-                        logger.warn("api23 patch: failed on ${soFile.path}: $error")
-                    }
+// Post-patch gate: returns null when [soFile] can load on Android 6.0, or the
+// reason it cannot. It re-derives the invariants the two patch functions above
+// are supposed to establish (no versioned imports left, no API-24 fortify
+// import survived the rename, every weakified import is actually weak), so a
+// patch that silently skipped or refused a file fails the build here instead of
+// crashing on the device.
+private fun elfApi23Problem(soFile: File): String? {
+    val data = soFile.readBytes()
+    val elfMagic = byteArrayOf(0x7f.toByte(), 0x45, 0x4c, 0x46)
+    if (data.size < 0x40 || !data.copyOfRange(0, 4).contentEquals(elfMagic)) return "not an ELF file"
+    val is64 = data[4].toInt() == 2
+    val buf = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
+    val eShoff = if (is64) buf.getLong(0x28) else buf.getInt(0x20).toLong() and 0xffffffffL
+    val eShentsize = buf.getShort(if (is64) 0x3a else 0x2e).toInt() and 0xffff
+    val eShnum = buf.getShort(if (is64) 0x3c else 0x30).toInt() and 0xffff
+    if (eShoff <= 0L || eShentsize == 0 || eShnum == 0) return "no section headers"
+
+    // Same section-header offsets as clearElfSymbolVersions; both bitnesses are
+    // packaged (arm64/x86_64 are ELF64, armeabi-v7a is ELF32).
+    val shOffsetAt = if (is64) 24 else 16
+    val shSizeAt = if (is64) 32 else 20
+    val shLinkAt = if (is64) 40 else 24
+    val shEntsizeAt = if (is64) 56 else 36
+
+    fun field(base: Int, at: Int): Long =
+        if (is64) buf.getLong(base + at) else buf.getInt(base + at).toLong() and 0xffffffffL
+
+    var symOff = -1L
+    var symSize = 0L
+    var symEnt = 0
+    var strOff = -1L
+    var versymOff = -1L
+    for (i in 0 until eShnum) {
+        val base = (eShoff + i.toLong() * eShentsize).toInt()
+        when (buf.getInt(base + 4)) {
+            11 -> { // SHT_DYNSYM
+                symOff = field(base, shOffsetAt)
+                symSize = field(base, shSizeAt)
+                symEnt = buf.getInt(base + shEntsizeAt)
+                strOff = field((eShoff + buf.getInt(base + shLinkAt).toLong() * eShentsize).toInt(), shOffsetAt)
+            }
+            0x6fffffff -> versymOff = field(base, shOffsetAt) // SHT_GNU_versym
+        }
+    }
+    if (symOff < 0L || symEnt == 0 || strOff < 0L) return "no dynamic symbol table"
+
+    // st_name is the first field of both symbol layouts; st_info sits at 4
+    // (ELF64) or 12 (ELF32); st_shndx at 6 (ELF64) or 14 (ELF32).
+    val shndxAt = if (is64) 6 else 14
+    val stInfoAt = if (is64) 4 else 12
+    var cursor = symOff.toInt()
+    val end = symOff.toInt() + symSize.toInt()
+    while (cursor + symEnt <= end) {
+        val nameOff = buf.getInt(cursor)
+        val shndx = buf.getShort(cursor + shndxAt).toInt() and 0xffff
+        val binding = (buf.get(cursor + stInfoAt).toInt() and 0xff) shr 4
+        if (shndx == 0 && nameOff > 0) { // SHN_UNDEF: an import this file expects resolved
+            val at = strOff.toInt() + nameOff
+            val nameEnd = indexOfBytes(data, byteArrayOf(0), at)
+            if (nameEnd > at) {
+                val name = String(data, at, nameEnd - at, Charsets.US_ASCII)
+                if (name in api23NativeSymbolRenames) return "fortify import '$name' was not renamed"
+                if (name in api23NativeSymbolWeakify && binding != 2) {
+                    return "import '$name' should be weak but binding is $binding"
                 }
+            }
+        }
+        cursor += symEnt
+    }
+
+    if (versymOff >= 0L) {
+        // .gnu.version is a u16 array parallel to .dynsym; anything >= 2 is a
+        // version requirement Android 6's libc (no version definitions) cannot
+        // resolve, so the linker refuses the whole dlopen.
+        val count = (symSize / symEnt).toInt()
+        var versioned = 0
+        for (j in 0 until count) {
+            if ((buf.getShort(versymOff.toInt() + 2 * j).toInt() and 0xffff) >= 2) versioned++
+        }
+        if (versioned > 0) return "$versioned of $count symbol version requirements remain"
+    }
+    return null
+}
+
+tasks.matching { it.name.matches(Regex("merge\\w*NativeLibs")) }.configureEach {
+    // The doLast below rewrites this task's outputs in place. Gradle neither
+    // fingerprints nor caches doLast side effects: an UP-TO-DATE or FROM-CACHE
+    // replay of an earlier merge would skip the patch entirely and package
+    // unpatched libraries, because the patch rules are not part of the task's
+    // inputs. Pin the merge — and with it the patch — to execute on every build.
+    outputs.upToDateWhen { false }
+    outputs.doNotCacheIf("the api23 native patch mutates these outputs after the merge") { true }
+    doLast {
+        val soFiles = outputs.files.filter { it.isDirectory }.flatMap { dir ->
+            dir.walkTopDown().filter { it.isFile && it.name.endsWith(".so") }.toList()
+        }
+        for (soFile in soFiles) {
+            try {
+                if (patchElfUndSymbols(soFile, api23NativeSymbolRenames, api23NativeSymbolWeakify)) {
+                    logger.lifecycle("api23 patch: patched imports in ${soFile.name}")
+                }
+                if (clearElfSymbolVersions(soFile)) {
+                    logger.lifecycle("api23 patch: cleared symbol version requirements in ${soFile.name}")
+                }
+            } catch (error: Throwable) {
+                logger.warn("api23 patch: failed on ${soFile.path}: $error")
+            }
+        }
+        // The patch functions above can silently refuse work (unparseable ELF,
+        // a rename skipped for overlapping strings), so re-derive the API 23
+        // invariants and fail the build listing every library that is still
+        // incompatible instead of shipping an APK that crashes on the device.
+        val problems = soFiles.mapNotNull { so -> elfApi23Problem(so)?.let { "${so.name}: $it" } }
+        if (problems.isNotEmpty()) {
+            throw GradleException(
+                "api23 patch: native libraries still incompatible with Android 6.0 (API 23):\n  " +
+                    problems.joinToString("\n  ")
+            )
         }
     }
 }
