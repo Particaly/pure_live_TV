@@ -44,6 +44,11 @@ val localProperties = Properties().apply {
     }
 }
 
+// Android 6.0 (API 23) floor. Mirrors android6MinSdk in app/build.gradle.kts —
+// the app pins its own copy so Flutter's build-time minSdk migrator cannot
+// rewrite it, and this one is applied to the plugin subprojects below.
+val android6MinSdk = 23
+
 val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
 rootProject.layout.buildDirectory.value(newBuildDir)
 
@@ -59,6 +64,18 @@ subprojects {
                 compileSdkVersion(37)
                 if (namespace.isNullOrBlank()) {
                     namespace = project.group.toString()
+                }
+                // Current-generation Flutter plugins (better_player_plus,
+                // permission_handler_android, shared_preferences_android,
+                // url_launcher_android, video_player_android, …) pin minSdk 24 to
+                // match Flutter 3.47's default floor. This TV build still ships
+                // to Android 6.0 (API 23) boxes, so pull every plugin back down
+                // to the app's minSdk or the manifest merger rejects the app.
+                // The plugins gate their post-23 code paths behind
+                // Build.VERSION checks; better_player_plus' engine-attach and
+                // PIP paths were verified to be guarded.
+                if ((defaultConfig.minSdk ?: 21) > android6MinSdk) {
+                    defaultConfig.minSdk = android6MinSdk
                 }
             }
         }

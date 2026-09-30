@@ -18,6 +18,7 @@ import 'package:pure_live/app/bootstrap/app_navigator.dart';
 import 'package:pure_live/features/remote/models/server_state.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:pure_live/shared/dialog/backup_import_dialog.dart';
+import 'package:pure_live/shared/utils/platform_utils.dart';
 
 part 'tv_remote_receiver.g.dart';
 
@@ -276,6 +277,10 @@ class TvRemoteReceiver extends _$TvRemoteReceiver {
 
   Future<String?> _getLocalIp() async {
     try {
+      // getifaddrs backs NetworkInterface.list and only exists from Android 7;
+      // the binary patch resolves it to null on Android 6, so calling it there
+      // would kill the process natively instead of throwing.
+      if (PlatformUtils.isAndroid && await PlatformUtils.androidSdkInt() < 24) return null;
       // Multi-NIC boxes surface virtual adapters first (VPN/TUN, bridges,
       // emulator NAT), so "first non-loopback IPv4" used to advertise a
       // 10.x address the phone could not reach. Rank the candidates the same

@@ -191,7 +191,21 @@ class GlobalPlayerService {
   /// Ensures the service is up on [defaultEngine].
   Future<void> initialize({PlayerEngine defaultEngine = PlayerEngine.mediaKit}) async {
     if (_initialized) return;
-    MediaKitPlayerAdapter.ensureInitialized();
+    // media_kit cannot load libmpv on Android 6.0 boxes (libmpv declares
+    // DT_NEEDED on libvulkan.so, which only exists from Android 7) and its
+    // ensureInitialized rethrows after logging. The kernel must still come up
+    // so the remaining engines (Exo / IJK) can take playback; if media_kit is
+    // ever selected here anyway, its factory fails at player creation.
+    try {
+      MediaKitPlayerAdapter.ensureInitialized();
+    } catch (error, stackTrace) {
+      log(
+        'GlobalPlayerService: media_kit adapter unavailable: $error',
+        name: 'GlobalPlayerService',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
     await loadPlatformProvider();
     final kernel = PlayerKernel();
     if (_platformProvider != null) kernel.attachPlatformProvider(_platformProvider!);

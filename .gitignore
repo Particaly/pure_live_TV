@@ -57,3 +57,7 @@ pubspec.lock
 **/web_remote/node_modules/
 **/web_remote/dist/
 **/web_remote/.local
+
+# TV 构建产物与 NDK/CMake 构建缓存
+/dist/
+**/.cxx/

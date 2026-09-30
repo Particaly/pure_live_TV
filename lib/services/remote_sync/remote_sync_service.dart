@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:pure_live/shared/utils/hive_pref_util.dart';
 import 'package:pure_live/shared/utils/toast_util.dart';
 import 'package:pure_live/shared/utils/date_time_utils.dart';
+import 'package:pure_live/shared/utils/platform_utils.dart';
 import 'package:pure_live/shared/i18n/locale_helper.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:pure_live/app/bootstrap/app_navigator.dart';
@@ -194,6 +195,9 @@ class RemoteSyncController extends _$RemoteSyncController {
 
   Future<void> _refreshNetworkInfo() async {
     try {
+      // getifaddrs is only available from Android 7 (see tv_remote_receiver);
+      // skip the enumeration rather than risk a native crash on Android 6.
+      if (PlatformUtils.isAndroid && await PlatformUtils.androidSdkInt() < 24) return;
       final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4, includeLoopback: false);
       final ips = <String>{};
       String? privateIp;

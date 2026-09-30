@@ -37,7 +37,15 @@ class AppInitializer {
     Hive.init(path);
 
     await HivePrefUtil.init();
-    MediaKit.ensureInitialized();
+    // libmpv declares DT_NEEDED on libvulkan.so, which only exists from
+    // Android 7; on Android 6 boxes DynamicLibrary.open fails and
+    // ensureInitialized rethrows after logging. Startup must survive that:
+    // playback falls back to the other engines (better_player / ijk) instead.
+    try {
+      MediaKit.ensureInitialized();
+    } catch (error) {
+      MediaCoreLog.warning(LogCategory.general, 'media_kit native library unavailable: $error', error: error);
+    }
     await AppPathManager().initialize();
     // Image cache setup is not needed for the first frame: run it in the
     // background so startup is not blocked (the getter falls back to the
